@@ -232,7 +232,7 @@ def wiki_link(target, alias, links_out):
     if nid:
         links_out.add(nid)
         label = alias.strip() if alias and alias.strip() else notes_raw[nid]["title"]
-        return f'<a class="wikilink" href="#/note/{quote_id(nid)}">{html.escape(label)}</a>'
+        return f'<a class="wikilink" href="#/n/{quote_id(nid)}">{html.escape(label)}</a>'
     label = (alias or target).strip().split("/")[-1]
     return f'<span class="wikilink dead" title="库中无此文：{html.escape(target, True)}">{html.escape(label)}</span>'
 
@@ -263,10 +263,10 @@ def preprocess(md, links_out):
         target = m.group(1)
         nid = resolve_link(target)
         if nid and nid.startswith("图鉴/"):
-            return f'<a class="wikilink embed" href="#/gallery/{quote_id(nid)}">图鉴 · {html.escape(notes_raw[nid]["base"].replace(".excalidraw",""))}</a>'
+            return f'<a class="wikilink embed" href="#/g/{quote_id(nid)}">图鉴 · {html.escape(notes_raw[nid]["base"].replace(".excalidraw",""))}</a>'
         if nid:
             links_out.add(nid)
-            return f'<a class="wikilink embed" href="#/note/{quote_id(nid)}">{html.escape(notes_raw[nid]["title"])}</a>'
+            return f'<a class="wikilink embed" href="#/n/{quote_id(nid)}">{html.escape(notes_raw[nid]["title"])}</a>'
         return f'<span class="wikilink dead">{html.escape(target)}</span>'
     md = re.sub(r"!\[\[([^\]\|]+)(?:\|[^\]]*)?\]\]", embed_sub, md)
 
@@ -306,7 +306,7 @@ def preprocess(md, links_out):
             nid = resolve_link(name)
             if nid:
                 links_out.add(nid)
-                return f'- <a class="wikilink" href="#/note/{quote_id(nid)}">{html.escape(notes_raw[nid]["title"])}</a>'
+                return f'- <a class="wikilink" href="#/n/{quote_id(nid)}">{html.escape(notes_raw[nid]["title"])}</a>'
             return mm.group(0)
         return re.sub(r"^(\s*-\s*)(.+?)\s*$", li, inner, flags=re.M)
     md = re.sub(r"<!--\s*dsh:children:start\s*-->(.*?)<!--\s*dsh:children:end\s*-->", children_sub, md, flags=re.S)

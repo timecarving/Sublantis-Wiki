@@ -64,6 +64,9 @@
     window.scrollTo(0, 0);
 
     const p = r.parts;
+    /* 兼容别名：构建期曾用 #/note/ 与 #/gallery/，一律归一到 #/n/ 与 #/g/ */
+    if (p[0] === "note") p[0] = "n";
+    else if (p[0] === "gallery") p[0] = "g";
     let html = "";
     try {
       if (p.length === 0 || p[0] === "") html = viewHome();
