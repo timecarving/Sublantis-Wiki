@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>converting…</title>
+<script>
+window.EXCALIDRAW_ASSET_PATH = "/dist/prod/";
+</script>
+<script src="/bundle.js"></script>
+<script src="/scenes.js"></script>
+</head>
+<body>
+<pre id="out">starting…</pre>
+<script>
+const out = document.getElementById("out");
+const log = (m) => { out.textContent += "\n" + m; fetch("/log", { method: "POST", body: String(m) }); };
+
+(async () => {
+  const { exportToSvg, restoreElements, getNonDeletedElements } = window.__EX;
+  for (const sc of window.__SCENES) {
+    try {
+      const els = restoreElements(sc.elements, null);
+      const svg = await exportToSvg({
+        elements: els,
+        appState: {
+          exportBackground: true,
+          exportPadding: 32,
+          viewBackgroundColor: sc.viewBackgroundColor,
+          exportWithDarkMode: false,
+          exportEmbedScene: false,
+        },
+        files: {},
+        exportPadding: 32,
+      });
+      const str = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(svg);
+      await fetch("/save", { method: "POST", body: JSON.stringify({ name: sc.name, svg: str }) });
+      log("ok " + sc.name + " " + els.length + " els, " + Math.round(str.length / 1024) + "KB");
+    } catch (e) {
+      log("FAIL " + sc.name + ": " + (e && e.stack || e));
+    }
+  }
+  log("ALL DONE");
+  document.title = "DONE";
+})();
+</script>
+</body>
+</html>

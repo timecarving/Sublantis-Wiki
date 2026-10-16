@@ -1,0 +1,22 @@
+<!doctype html><html><head><meta charset="utf-8">
+<script>window.EXCALIDRAW_ASSET_PATH="/dist/prod/";</script>
+<script src="/bundle.js"></script><script src="/scenes.js"></script>
+</head><body><pre id="out"></pre><script>
+const log = (m) => { document.getElementById("out").textContent += "\n" + m; fetch("/log", {method:"POST", body:String(m)}); };
+(async () => {
+  const { exportToSvg, restoreElements, getNonDeletedElements, getCommonBounds } = window.__EX;
+  const sc = window.__SCENES.find((s) => s.name === "哲学基底三角");
+  log("raw " + sc.elements.length);
+  log("raw[0] " + JSON.stringify(sc.elements[0]).slice(0, 600));
+  const r = restoreElements(sc.elements, null);
+  log("restored " + r.length + " nonDeleted " + getNonDeletedElements(r).length);
+  log("types " + JSON.stringify(r.slice(0, 6).map((e) => [e.type, e.isDeleted, e.x, e.y, e.width, e.height])));
+  log("bounds " + JSON.stringify(getCommonBounds(getNonDeletedElements(r))));
+  const svg = await exportToSvg(getNonDeletedElements(r), {
+    exportBackground: true, exportPadding: 24, viewBackgroundColor: "#ffffff",
+    exportWithDarkMode: false, exportEmbedScene: false,
+  }, null, {});
+  log("viewBox " + svg.getAttribute("viewBox") + " children " + svg.children.length);
+  log("DONE");
+})();
+</script></body></html>

@@ -1,0 +1,8 @@
+# 原文快照：本地保留，不上传（网页正文已预渲染进 data/notes.js）
+笔记/
+
+# 构建工具链依赖与中间产物
+build/conv/node_modules/
+build/conv/bundle.js
+build/conv/scenes.js
+build/conv/package-lock.json
