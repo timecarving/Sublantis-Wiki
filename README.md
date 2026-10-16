@@ -1,5 +1,7 @@
 # Sublantis 世界观 Wiki
 
+**在线访问** → <https://timecarving.github.io/Sublantis-Wiki/>
+
 把 Obsidian 库里的 **Sublantis 世界观**笔记整理成一个纯静态前端 wiki：原文全收录、结构化数据抽取、Excalidraw 图鉴用**官方导出器真转换**成自包含 SVG、wikilink 关系网络与全文检索。
 
 ---
