@@ -9,3 +9,4 @@ build/conv/package-lock.json
 
 # 本地截图/调试产物
 build/*.png
+build/preview/
