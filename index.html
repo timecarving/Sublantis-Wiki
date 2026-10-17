@@ -1,37 +1,53 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sublantis 世界观档案库</title>
-<meta name="description" content="Sublantis 世界观 —— OC 设定集，收录全部原文笔记、结构化条目与手绘关系图鉴。">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sublantis · 潜没档案</title>
+<meta name="description" content="Sublantis 世界观：284 篇档案、24 张手绘图版、16 个分区。神秘学被工程化，CCRU 伪史与计算机科学对位。">
 <link rel="icon" href="assets/brand/flag.svg">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
-<div id="app">
-  <header class="topbar">
-    <a class="brand" href="#/">
-      <img class="flag" src="assets/brand/flag.svg" alt="Sublantis 国旗" width="34" height="23">
-      <span class="wm"><b>Sublantis</b><i>世界观档案库</i></span>
-    </a>
-    <nav class="mainnav" id="topnav"></nav>
-    <div class="searchbox">
-      <input id="globalsearch" type="search" placeholder="检索    /" autocomplete="off" aria-label="全文检索">
-    </div>
-  </header>
 
-  <main id="main"><div class="empty">正在读取档案…</div></main>
-
-  <footer class="docfoot">
-    <div class="in">
-      <span class="docid">SUB·ARC / 档案库</span>
-      <span>源 Obsidian「Sublantis世界观大体概述」</span>
-      <span>原文快照见 笔记/</span>
-      <span id="footmeta" class="r"></span>
-    </div>
-  </footer>
+<div class="sea" aria-hidden="true">
+  <div class="caustic c1"></div>
+  <div class="caustic c2"></div>
+  <div class="caustic c3"></div>
 </div>
+<div class="grain" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+
+<header class="topbar">
+  <a class="mark" href="#/">
+    <span class="glyph">◈</span>
+    <span class="wm"><b>SUBLANTIS</b><i>潜没档案</i></span>
+  </a>
+  <nav class="nav" id="topnav">
+    <a data-k="home" href="#/">总览</a>
+    <a data-k="s" href="#/s">分区</a>
+    <a data-k="x" href="#/x">结构化</a>
+    <a data-k="c" href="#/c">名录</a>
+    <a data-k="g" href="#/g">图版</a>
+    <a data-k="m" href="#/m">星图</a>
+    <a data-k="q" href="#/q">检索</a>
+  </nav>
+  <a class="find" href="#/q" title="检索（/）">⌕</a>
+</header>
+
+<aside class="rail" id="rail" aria-hidden="true">
+  <div class="rail-read" id="railread">0x00</div>
+  <div class="ticks"></div>
+  <div class="rail-mark" id="railmark"></div>
+</aside>
+
+<main id="main"></main>
+
+<footer class="base">
+  <span>SUB · ARCHIVE</span>
+  <span>源：OBSIDIAN「SUBLANTIS 世界观大体概述」</span>
+  <span>构建 2026-10-17</span>
+</footer>
 
 <script src="data/index.js"></script>
 <script src="data/notes.js"></script>
