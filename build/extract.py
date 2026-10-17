@@ -38,9 +38,32 @@ def strip_md(txt):
     t = re.sub(r"\[([^\]]*)\]\([^\)]*\)", r"\1", t)
     t = re.sub(r"^#{1,6}\s*", "", t, flags=re.M)
     t = re.sub(r"^\s*>\s?", "", t, flags=re.M)
+    t = re.sub(r"\[![^\]]*\][+-]?", "", t)
     t = re.sub(r"[*_~]{1,3}", "", t)
     t = re.sub(r"\s+", " ", t)
     return t.strip()
+
+def blurb_from_md(md, title):
+    body = re.sub(r"^---\n.*?\n---\n", "", md, count=1, flags=re.S)
+    body = re.sub(r"```.*?```", " ", body, flags=re.S)
+    body = re.sub(r"<!--.*?-->", " ", body, flags=re.S)
+    for line in body.split("\n"):
+        t = line.strip()
+        if not t or len(t) < 8:
+            continue
+        if re.match(r"^#{1,6}\s", t) or t.startswith(("|", "```", "^^", "%%")):
+            continue
+        if re.match(r"^[-=]{3,}$", t):
+            continue
+        if re.match(r"^\[![^\]]*\]", t):
+            continue
+        t = strip_md(t)
+        t = re.sub(r"^[\s·•\-—]+", "", t)
+        if len(t) < 8:
+            continue
+        return t[:150]
+    return ""
+
 
 def first_sentence(plain, title):
     s = plain
@@ -216,6 +239,17 @@ if os.path.exists(_cp):
 # ================================================================ Markdown 渲染
 
 CODE_FENCE = re.compile(r"^```([^\n`]*)\n(.*?)^```\s*$", re.M | re.S)
+
+# 收录边界：作者为「其他作品 / 未来作品」写的内容不进本站，只在渲染期剔除，源 .md 一个字节不动。
+CROSS_WORK_STRIP = [
+    re.compile(r"^- 联动：作者另一部作品.*?(?=\n\s*[-#]|\n\s*$)", re.M | re.S),
+]
+
+
+def redact(md):
+    for pat in CROSS_WORK_STRIP:
+        md = pat.sub("", md)
+    return md
 MD = markdown.Markdown(extensions=[
     "tables", "fenced_code", "sane_lists", "attr_list", "footnotes",
     "md_in_html", "admonition",
@@ -350,15 +384,15 @@ for nid, n in sorted(notes_raw.items()):
         kind = "gallery"
         plain = " ".join(parse_gallery(n["path"])[0])
     else:
-        html_body = md_to_html(n["md"], links)
-        plain = strip_md(n["md"])
+        html_body = md_to_html(redact(n["md"]), links)
+        plain = strip_md(redact(n["md"]))
     sec, col = sec_by_id.get(nid, (None, None))
     if sec is None and not nid.startswith("图鉴/"):
         sec = n["dir"].split("/")[0] if n["dir"] else "其他"
         col = n["dir"]
     if sec is None:
         sec, col = "图鉴", "Excalidraw 图鉴"
-    blurb = blurb_by_id.get(nid, "") or gallery_note.get(nid, "") or first_sentence(plain, n["title"])
+    blurb = blurb_by_id.get(nid, "") or gallery_note.get(nid, "") or blurb_from_md(n["md"], n["title"]) or first_sentence(plain, n["title"])
     NOTES.append({
         "id": nid, "title": n["title"], "base": n["base"], "path": n["path"],
         "dir": n["dir"], "section": sec, "collection": col, "kind": kind,

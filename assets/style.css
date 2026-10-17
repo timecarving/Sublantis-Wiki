@@ -338,3 +338,77 @@ span.wikilink.dead { color: var(--ink-3); border-bottom: 1px dotted var(--ink-3)
 
 .pill { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); border: 1px solid var(--line); padding: 1.5px 7px; border-radius: 2px; display: inline-block; }
 .pill.a { color: var(--amber); border-color: var(--amber-dim); }
+
+/* ---- 收录范围说明 ---- */
+.scope { font-size: 11.5px; color: var(--ink-3); letter-spacing: .02em; margin-top: 14px; padding: 7px 11px;
+  border-left: 2px solid var(--amber-dim); background: rgba(226,168,56,0.05); display: inline-block; }
+
+/* ---- 首页标题右侧的「全部 →」 ---- */
+h2.sec-title .more { margin-left: 14px; font-family: var(--font-mono); font-size: 10.5px;
+  letter-spacing: .1em; font-weight: 400; text-transform: none; }
+h2.sec-title .more a { color: var(--ink-3); border-bottom: 1px solid var(--line-2); padding-bottom: 1px; }
+h2.sec-title .more a:hover { color: var(--amber); border-color: var(--amber-dim); }
+
+/* ---- 首页图鉴缩略图带 ---- */
+.thumbstrip { display: grid; grid-template-columns: repeat(8, 1fr); gap: 10px; }
+.thumbstrip .ts { display: block; border: 1px solid var(--line); background: #f7f7f5; border-radius: 2px;
+  overflow: hidden; transition: transform .18s ease, border-color .18s ease; }
+.thumbstrip .ts:hover { transform: translateY(-3px); border-color: var(--amber-dim); }
+.thumbstrip img { width: 100%; height: 96px; object-fit: contain; display: block; padding: 5px; box-sizing: border-box; }
+.thumbstrip span { display: block; font-family: var(--font-mono); font-size: 10px; color: var(--ink-3);
+  background: var(--bg-2); padding: 5px 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1180px) { .thumbstrip { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 660px) { .thumbstrip { grid-template-columns: repeat(2, 1fr); } }
+
+/* ---- 阅读页 上一篇 / 下一篇 ---- */
+.pager { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 46px;
+  padding-top: 24px; border-top: 1px solid var(--line); }
+.pager a { display: block; border: 1px solid var(--line); border-radius: 3px; padding: 13px 16px;
+  background: var(--bg-2); transition: border-color .18s ease, background .18s ease; min-height: 54px; }
+.pager a:hover { border-color: var(--amber-dim); background: var(--bg-3); }
+.pager .nx { text-align: right; }
+.pager .dir { display: block; font-family: var(--font-mono); font-size: 10px; letter-spacing: .14em;
+  color: var(--ink-3); text-transform: uppercase; margin-bottom: 5px; }
+.pager .t { display: block; font-size: 13.5px; font-weight: 600; color: var(--ink); line-height: 1.5; }
+
+/* ---- 移动端 ---- */
+@media (max-width: 760px) {
+  .topbar { height: auto; padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
+  .topbar .mainnav { order: 3; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .topbar .mainnav a { white-space: nowrap; font-size: 12px; padding: 6px 9px; }
+  .searchbox { flex: 1; min-width: 140px; }
+  .hero h1 { font-size: 34px; line-height: 1.15; }
+  .hero .stats { gap: 14px; flex-wrap: wrap; }
+  .hero .stat .n { font-size: 20px; }
+  .reader { display: block; }
+  .article-head h1 { font-size: 24px; }
+  .prose { font-size: 14.5px; }
+  .prose table { display: block; width: 100%; overflow-x: auto; white-space: nowrap; }
+  .prose pre { font-size: 11.5px; }
+  .gal-grid { grid-template-columns: 1fr; }
+  .gal-detail { display: block !important; }
+  .gal-detail aside { position: static !important; margin-top: 20px; }
+  .graph-legend { display: none; }
+  .pager { grid-template-columns: 1fr; }
+  .pager .nx { text-align: left; }
+  .tabs { overflow-x: auto; white-space: nowrap; }
+}
+
+/* 分类卡里的代表条目：单行截断 */
+.seccard .cols span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- 图鉴筛选 ---- */
+.galfilter { width: 100%; max-width: 420px; margin: 24px 0 10px; background: var(--bg-2);
+  border: 1px solid var(--line); color: var(--ink); font-family: var(--font-mono); font-size: 13px;
+  padding: 10px 13px; border-radius: 2px; outline: none; display: block; }
+.galfilter:focus { border-color: var(--amber); }
+
+/* ---- 大图灯箱 ---- */
+.gal-view img.zoomable { cursor: zoom-in; }
+.lightbox { position: fixed; inset: 0; z-index: 200; background: rgba(5,6,10,0.94);
+  display: none; align-items: center; justify-content: center; padding: 34px; cursor: zoom-out; }
+.lightbox.on { display: flex; }
+.lightbox img { max-width: 100%; max-height: calc(100vh - 90px); background: #f7f7f5;
+  border-radius: 2px; box-shadow: 0 24px 90px rgba(0,0,0,.75); }
+.lightbox .lb-hint { position: absolute; bottom: 16px; left: 0; right: 0; text-align: center;
+  font-size: 10.5px; letter-spacing: .12em; color: var(--ink-3); }

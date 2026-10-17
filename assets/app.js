@@ -49,6 +49,21 @@
     return { parts: parts.map(dec), raw: h };
   }
 
+  /* MOC 阅读顺序：分类 → 子集合 → 条目，供「上一篇 / 下一篇」使用 */
+  const ORDER = (() => {
+    const seen = new Set(), out = [];
+    for (const s of IDX.sections || []) {
+      for (const c of s.collections || []) {
+        for (const id of c.ids || []) {
+          if (!seen.has(id) && byId.has(id)) { seen.add(id); out.push(id); }
+        }
+      }
+    }
+    for (const n of NOTES) if (!seen.has(n.id)) { seen.add(n.id); out.push(n.id); }
+    return out;
+  })();
+  const ORDER_IDX = new Map(ORDER.map((id, i) => [id, i]));
+
   function navHTML(active) {
     return NAV.map(([href, label]) => {
       const key = href.replace(/^#/, "");
@@ -87,6 +102,7 @@
     main.innerHTML = html;
     if (p[0] === "map") mountGraph();
     if (p[0] === "q") mountSearch();
+    if (p[0] === "g" && p.length === 1) mountGalleryFilter();
     window.dispatchEvent(new CustomEvent("view:ready", { detail: p }));
   }
 
@@ -96,15 +112,23 @@
     const m = IDX.meta || {};
     const totalWords = NOTES.reduce((a, n) => a + (n.words || 0), 0);
     const cards = (IDX.sections || []).map((s, i) => {
-      const chips = s.collections.slice(0, 7).map((c) => `<span>${esc(c.name)}</span>`).join("") +
-        (s.collections.length > 7 ? `<span>+${s.collections.length - 7}</span>` : "");
+      const inSec = NOTES.filter((n) => n.section === s.name);
+      const sample = inSec.slice().sort((a, b) => (b.words || 0) - (a.words || 0)).slice(0, 3);
+      const words = inSec.reduce((a, n) => a + (n.words || 0), 0);
+      const chips = sample.map((n) => `<span>${esc(n.title)}</span>`).join("");
       return `<a class="card seccard" href="${secUrl(s.name)}">
         <div class="idx">${String(i + 1).padStart(2, "0")} / ${String(IDX.sections.length).padStart(2, "0")}</div>
         <div class="nm">${esc(s.name)}</div>
-        <div class="ct">${s.count} 条</div>
+        <div class="ct">${s.count} 条 · ${(words / 10000).toFixed(1)} 万字</div>
         <div class="cols">${chips}</div>
       </a>`;
     }).join("");
+
+    const strip = (IDX.gallery || []).slice(0, 8).map((g) => `
+      <a class="ts" href="${galUrl(g.id)}" title="${esc(g.name)}">
+        <img src="${g.thumb || g.svg}" alt="${esc(g.name)}" loading="lazy">
+        <span>${esc(g.name)}</span>
+      </a>`).join("");
 
     const featured = pickFeatured();
 
@@ -114,6 +138,7 @@
       <h1>Sublantis<br><span class="thin">沉入潜意识的亚特兰蒂斯</span></h1>
       <p class="lede">神秘学被工程化、CCRU 伪史与计算机科学对位的十六进制世界。本站收录全部原文笔记、
       结构化条目与手绘关系图鉴。</p>
+      <p class="scope mono">收录范围：仅 Sublantis / HMLC 本体设定 —— 作者其他作品与未来作品的规划不入站。</p>
       <div class="stats">
         <div class="stat"><div class="n">${NOTES.length}</div><div class="l">笔记</div></div>
         <div class="stat"><div class="n">${(IDX.gallery || []).length}</div><div class="l">图鉴</div></div>
@@ -134,6 +159,9 @@
         <div style="font-size:13px;color:var(--ink-3);line-height:1.65">${esc((n.blurb || "").slice(0, 130))}</div>
       </a>`).join("")}
     </div>
+
+    <h2 class="sec-title">图鉴一览 <span class="more"><a href="#/g">全部 ${(IDX.gallery || []).length} 张 →</a></span></h2>
+    <div class="thumbstrip">${strip}</div>
 
     <h2 class="sec-title">快速进入</h2>
     <div class="grid g4">
@@ -252,9 +280,21 @@
           </div>
         </header>
         <div class="prose">${n.html || `<p class="dim">（此笔记无正文）</p>`}</div>
+        ${pager(n.id)}
       </article>
       ${aside}
     </div>`;
+  }
+
+  function pager(id) {
+    const i = ORDER_IDX.has(id) ? ORDER_IDX.get(id) : -1;
+    if (i < 0) return "";
+    const prev = i > 0 ? byId.get(ORDER[i - 1]) : null;
+    const next = i < ORDER.length - 1 ? byId.get(ORDER[i + 1]) : null;
+    return `<nav class="pager">
+      ${prev ? `<a href="${noteUrl(prev.id)}"><span class="dir">← 上一篇</span><span class="t">${esc(prev.title)}</span></a>` : `<span class="ph"></span>`}
+      ${next ? `<a class="nx" href="${noteUrl(next.id)}"><span class="dir">下一篇 →</span><span class="t">${esc(next.title)}</span></a>` : `<span class="ph"></span>`}
+    </nav>`;
   }
 
   function extractTOC(html) {
@@ -317,7 +357,7 @@
         </div>
       </a>` : "";
     const cards = (IDX.gallery || []).map((g) => `
-      <a class="gal-card" href="${galUrl(g.id)}">
+      <a class="gal-card" href="${galUrl(g.id)}" data-q="${esc((g.name + " " + (g.note || "") + " " + (g.elinks || []).join(" ")).toLowerCase())}">
         <div class="gal-thumb"><img src="${g.thumb || g.svg}" alt="${esc(g.name)}" loading="lazy"></div>
         <div class="gal-meta">
           <div class="nm">${esc(g.name)}</div>
@@ -327,7 +367,9 @@
       </a>`).join("");
     return `<div class="kicker">Atlas</div><h1 class="page-title">图鉴画廊</h1>
       <p class="lede">24 张 Excalidraw 手绘图，均由 <b>Excalidraw 官方导出器</b>从源数据转换而来 —— 手绘线条抖动、hachure 填充、Excalifont 字体与源文件完全一致，字体已内联，SVG 可无损缩放。另有 1 张 Obsidian Canvas 总览。点击查看大图与文本大纲。</p>
-      <div class="gal-grid" style="margin-top:26px">${canvasCard}${cards}</div>`;
+      <input id="galfilter" class="galfilter" type="search" placeholder="筛选：名称 / 摘要 / 关联笔记" autocomplete="off">
+      <div class="mono dim" id="galfilter-note" style="font-size:11px;margin:0 0 14px"></div>
+      <div class="gal-grid" style="margin-top:6px">${canvasCard}${cards}</div>`;
   }
 
   function viewCanvas() {
@@ -348,7 +390,7 @@
     return `<div class="crumb"><a href="#/g">图鉴画廊</a><span class="sep">/</span>Canvas 总览</div>
       <h1 class="page-title" style="margin-bottom:8px">${esc(c.name)}</h1>
       <p class="lede" style="margin-bottom:22px">${esc(c.note || "")}</p>
-      <div class="gal-view" style="max-height:none"><img src="${c.svg}" alt="${esc(c.name)}"></div>
+      <div class="gal-view" style="max-height:none"><img class="zoomable" src="${c.svg}" alt="${esc(c.name)}"></div>
       <div class="grid g3" style="margin-top:22px">
         <div class="panel card"><h4 class="mono dim" style="font-size:10.5px;letter-spacing:.16em;margin:0 0 10px">关联笔记 (${uniq.size})</h4>
           <ul style="margin:0;padding-left:16px;font-size:13px;line-height:1.9">${linkList}</ul></div>
@@ -378,7 +420,7 @@
     return `<div class="crumb"><a href="#/g">图鉴画廊</a><span class="sep">/</span>${esc(g.name)}</div>
       <div style="display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:28px;align-items:start" class="gal-detail">
         <div>
-          <div class="gal-view"><img src="${g.svg}" alt="${esc(g.name)}"></div>
+          <div class="gal-view"><img class="zoomable" src="${g.svg}" alt="${esc(g.name)}"></div>
         </div>
         <aside style="position:sticky;top:82px">
           <h1 style="font-size:22px;margin:0 0 8px">${esc(g.name)}</h1>
@@ -501,6 +543,24 @@
           <div class="p">${esc(n.section || "")} › ${esc(n.path)}</div>
           <div class="x">${snippet(n, query)}</div></a>`).join("")
         : `<div class="empty">没有命中「${esc(query)}」</div>`) : ""}`;
+  }
+
+  function mountGalleryFilter() {
+    const f = $("#galfilter");
+    if (!f) return;
+    const cards = [...document.querySelectorAll(".gal-card[data-q]")];
+    const note = $("#galfilter-note");
+    const apply = () => {
+      const q = f.value.trim().toLowerCase();
+      let n = 0;
+      for (const c of cards) {
+        const ok = !q || c.getAttribute("data-q").includes(q);
+        c.style.display = ok ? "" : "none";
+        if (ok) n++;
+      }
+      if (note) note.textContent = q ? `${n} / ${cards.length} 张命中` : "";
+    };
+    f.addEventListener("input", apply);
   }
 
   function mountSearch() {
@@ -743,7 +803,23 @@
 
   /* ---------------------------------------------------------- 全局交互 */
 
+  function openLightbox(src) {
+    let lb = $("#lightbox");
+    if (!lb) {
+      lb = document.createElement("div");
+      lb.id = "lightbox";
+      lb.className = "lightbox";
+      lb.innerHTML = '<img alt=""><div class="lb-hint mono">点击任意处或按 Esc 关闭</div>';
+      document.body.appendChild(lb);
+      lb.addEventListener("click", () => lb.classList.remove("on"));
+    }
+    $("img", lb).src = src;
+    lb.classList.add("on");
+  }
+
   document.addEventListener("click", (e) => {
+    const z = e.target.closest("img.zoomable");
+    if (z) { e.preventDefault(); openLightbox(z.getAttribute("src")); return; }
     const el = e.target.closest("[data-href]");
     if (el) { location.hash = el.getAttribute("data-href"); return; }
     const toc = e.target.closest("[data-toc]");
@@ -764,10 +840,24 @@
     });
   }
   document.addEventListener("keydown", (e) => {
-    if (e.key === "/" && !/input|textarea/i.test(document.activeElement.tagName)) {
+    if (/input|textarea|select/i.test(document.activeElement.tagName)) return;
+    if (e.key === "/") {
       e.preventDefault();
       const q = $("#globalsearch") || $("#q");
       if (q) q.focus();
+      return;
+    }
+    if (e.key === "Escape") { const lb = $("#lightbox"); if (lb) lb.classList.remove("on"); return; }
+    /* 笔记页： [ 上一篇 / ] 下一篇 */
+    if (e.key === "[" || e.key === "]" || e.key === "j" || e.key === "k") {
+      const r = parseHash();
+      if (r.parts[0] !== "n" && r.parts[0] !== "note") return;
+      const id = r.parts.slice(1).join("/");
+      const i = ORDER_IDX.get(id);
+      if (i === undefined) return;
+      const step = e.key === "]" || e.key === "j" ? 1 : -1;
+      const t = ORDER[i + step];
+      if (t) { e.preventDefault(); location.hash = noteUrl(t); }
     }
   });
 
