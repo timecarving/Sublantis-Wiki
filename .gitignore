@@ -6,3 +6,6 @@ build/conv/node_modules/
 build/conv/bundle.js
 build/conv/scenes.js
 build/conv/package-lock.json
+
+# 本地截图/调试产物
+build/*.png

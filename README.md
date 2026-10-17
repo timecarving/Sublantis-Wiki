@@ -6,6 +6,17 @@
 
 ---
 
+## 视觉语言
+
+版式与配色不是随便挑的，全部取自世界观自己的文本：
+
+- **国旗色板**（`assets/brand/flag.svg`，Atlantean Cross）：纸面 `#F0EBDD`、结构墨 `#202522`、中环绿 `#3F7B4A`，四方位火 `#C73E2D` / 土 `#3F7B4A` / 风 `#E2B43B` / 水 `#286A9B`。顶栏下方那条四色细线就是这四向色，分类编号的方块色也按序循环。
+- **构式**取自「中性色构成主义 + Op Art + 速记字体」：超大无衬线刊头、细网格底纹、编号索引行、整行反白的 hover。
+- **版式**取自 `叙事设计/排版与元文本`：A4 报告式页边距、页眉章节号（`档案 / 分类 03`）、墨黑反白页脚文档标识、**标准双栏**（宽屏默认，右上角可一键切单栏），表格 / 代码块 / 引文 / callout 会打破分栏独占整行。
+- 红色只作四方位色之一，不铺大面积底色；「黑与红」是设定里的意识形态配色，不是国家色。
+
+---
+
 ## 打开方式
 
 **本地**：双击 `index.html` 即可（纯 `file://`，无需服务器、无需联网）。本地模式下每篇笔记的元数据栏会出现「查看原始 Markdown ↗」，直接打开旁边的原文快照。
@@ -45,16 +56,17 @@ https://<你的用户名>.github.io/Sublantis-Wiki/
 Sublantis-Wiki/
 ├── index.html              入口（唯一页面，hash 路由）
 ├── assets/
-│   ├── app.js              前端应用：路由 / 8 个视图 / 关系图力学模拟 / 检索
-│   ├── style.css           视觉样式
+│   ├── app.js              前端应用：路由 / 8 个视图 / 关系图 / 检索 / 双栏排版
+│   ├── style.css           视觉系统：构成主义海报 + A4 报告式版式
+│   ├── brand/flag.svg      Atlantean Cross 国旗（顶栏品牌与站点图标）
 │   └── gallery/
 │       ├── *.svg           24 张图鉴 + Canvas 总览，全部矢量、自包含
 │       ├── thumbs/*.png     画廊列表用位图缩略图（640px，加快首屏绘制）
 │       └── thumbs-sm/*.png  Canvas 卡片内嵌的小图（300px）
 ├── data/
 │   ├── index.js            window.SUBLANTIS_INDEX   —— 元信息 / 分类树 / 图鉴 / 结构化 / 角色 / Canvas
-│   └── notes.js            window.SUBLANTIS_NOTES   —— 283 篇笔记正文（预渲染 HTML + 纯文本）
-├── 笔记/                    283 篇原文快照 + 1 个 .canvas，与 Obsidian 库逐字节一致
+│   └── notes.js            window.SUBLANTIS_NOTES   —— 284 篇笔记正文（预渲染 HTML + 纯文本）
+├── 笔记/                    284 篇原文快照 + 1 个 .canvas，与 Obsidian 库逐字节一致
 │                          ⚠️ 本地保留，不进仓库（见 .gitignore）
 └── build/
     ├── extract.py          Markdown → HTML、MOC → 分类树、表格 → 结构化数据

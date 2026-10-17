@@ -1,866 +1,928 @@
-/* ============================================================
-   Sublantis 世界观 Wiki — 前端应用
-   数据：window.SUBLANTIS_INDEX / window.SUBLANTIS_NOTES（构建期生成）
-   ============================================================ */
+/* ============================================================================
+   Sublantis 世界观档案库 · 前端
+   hash 路由： #/ 总览 · #/s 分类 · #/n/<id> 笔记 · #/x 结构化
+              #/c 角色 · #/g 图鉴 · #/map 关系图 · #/q/<词> 检索
+   兼容旧前缀 note / gallery
+   ========================================================================== */
 (function () {
   "use strict";
 
-  const IDX = window.SUBLANTIS_INDEX || { meta: {}, sections: [], gallery: [], structured: [], characters: [], stats: {}, notesIndex: [] };
-  const NOTES = window.SUBLANTIS_NOTES || [];
-  /* 原文快照（笔记/）是否与站点同时存在。
-     本地双击打开（file://）时快照就在旁边，显示「查看原始 Markdown」；
-     部署到 GitHub Pages 后只上传渲染好的网页、不带原文快照，自动隐藏以避免 404。 */
-  const RAW_NOTES = location.protocol === "file:";
+  var IDX = window.SUBLANTIS_INDEX;
+  var NOTES = window.SUBLANTIS_NOTES;
+  var GALLERY = IDX.gallery || [];
+  var SECTIONS = IDX.sections || [];
+  var RAW_NOTES = location.protocol === "file:";
 
-  const byId = new Map(NOTES.map((n) => [n.id, n]));
-  const galById = new Map((IDX.gallery || []).map((g) => [g.id, g]));
+  var byId = new Map(NOTES.map(function (n) { return [n.id, n]; }));
+  var galById = new Map(GALLERY.map(function (g) { return [g.id, g]; }));
+  var galByName = new Map(GALLERY.map(function (g) { return [g.id.replace(/\.excalidraw$/, ""), g]; }));
+  var secIndex = new Map(SECTIONS.map(function (s, i) { return [s.name, i]; }));
 
-  /* 图鉴笔记的 id 形如 "图鉴/未命名/Zone体系.excalidraw"，索引里 name 为 "Zone体系" */
-  const galByName = new Map((IDX.gallery || []).map((g) => [g.id.replace(/\.excalidraw$/, ""), g]));
+  var DIRS = ["fire", "earth", "wind", "water"];
+  var DVAR = { fire: "var(--fire)", earth: "var(--earth)", wind: "var(--wind)", water: "var(--water)" };
 
-  const $ = (sel, root) => (root || document).querySelector(sel);
-  const app = $("#app");
-  const enc = encodeURIComponent;
-  const dec = decodeURIComponent;
-
-  function esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  function dirOf(name) {
+    var i = secIndex.has(name) ? secIndex.get(name) : 0;
+    return DIRS[i % 4];
   }
-  function noteUrl(id) { return "#/n/" + enc(id); }
-  function fileUrl(p) { return "笔记/" + String(p).split("/").map(encodeURIComponent).join("/"); }
-  function galUrl(id) { return "#/g/" + enc(id); }
-  function secUrl(n) { return "#/s/" + enc(n); }
 
-  /* ---------------------------------------------------------- 路由 */
-
-  const NAV = [
+  var NAV = [
     ["#/", "总览"],
     ["#/s", "分类"],
     ["#/x", "结构化"],
     ["#/c", "角色"],
-    ["#/g", "图鉴"],
+    ["#/g", "图版"],
     ["#/map", "关系图"],
-    ["#/q", "全文检索"],
+    ["#/q", "检索"]
   ];
 
-  function parseHash() {
-    const h = location.hash.replace(/^#/, "") || "/";
-    const parts = h.split("/").filter((x) => x !== "");
-    return { parts: parts.map(dec), raw: h };
+  var FIELD_LABEL = {
+    fullname: "全名", gender: "性别", deadname: "旧名", birth: "出生地",
+    major: "专业", socionics: "Socionics", mbti: "MBTI", psy: "超心理定位",
+    family: "家庭", position: "定位"
+  };
+
+  function $(s, r) { return (r || document).querySelector(s); }
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+  function enc(s) { return encodeURIComponent(s); }
+  function noteUrl(id) { return "#/n/" + enc(id); }
+  function galUrl(id) { return "#/g/" + enc(id); }
+  function secUrl(name) { return "#/s/" + enc(name); }
+  function fileUrl(p) { return "笔记/" + p.split("/").map(encodeURIComponent).join("/"); }
+  function words(n) { return n >= 10000 ? (n / 10000).toFixed(1) + " 万字" : n + " 字"; }
+  function pad2(n) { return String(n).padStart(2, "0"); }
+
+  /* 十六进制纪年：月日各取十六进制，例如 10-16 写作 0x 0A·10 */
+  function hexDay() {
+    var d = (IDX.meta && IDX.meta.builtAt) || "";
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+    if (!m) return "";
+    return "0x " + Number(m[2]).toString(16).toUpperCase().padStart(2, "0") +
+      "·" + Number(m[3]).toString(16).toUpperCase().padStart(2, "0");
   }
 
-  /* MOC 阅读顺序：分类 → 子集合 → 条目，供「上一篇 / 下一篇」使用 */
-  const ORDER = (() => {
-    const seen = new Set(), out = [];
-    for (const s of IDX.sections || []) {
-      for (const c of s.collections || []) {
-        for (const id of c.ids || []) {
-          if (!seen.has(id) && byId.has(id)) { seen.add(id); out.push(id); }
-        }
-      }
-    }
-    for (const n of NOTES) if (!seen.has(n.id)) { seen.add(n.id); out.push(n.id); }
-    return out;
+  var ORDER = [], ORDER_IDX = new Map();
+  (function buildOrder() {
+    var seen = new Set();
+    function push(id) { if (byId.has(id) && !seen.has(id)) { seen.add(id); ORDER.push(id); } }
+    SECTIONS.forEach(function (s) {
+      (s.collections || []).forEach(function (c) { (c.ids || []).forEach(push); });
+    });
+    NOTES.forEach(function (n) { push(n.id); });
+    ORDER.forEach(function (id, i) { ORDER_IDX.set(id, i); });
   })();
-  const ORDER_IDX = new Map(ORDER.map((id, i) => [id, i]));
 
-  function navHTML(active) {
-    return NAV.map(([href, label]) => {
-      const key = href.replace(/^#/, "");
-      const on = active === key || (key !== "/" && active.startsWith(key)) ? " class=\"on\"" : "";
-      return `<a href="${href}"${on}>${label}</a>`;
-    }).join("");
+  function docbar(sec, right) {
+    return '<div class="docbar"><div class="in">' +
+      '<span class="sec">档案 / ' + esc(sec) + "</span>" +
+      "<span>" + esc((IDX.meta && IDX.meta.name) || "Sublantis") + "</span>" +
+      '<div class="r">' + (right || "") + "</div></div></div>";
   }
 
-  function render() {
-    const r = parseHash();
-    const head = $("#topnav");
-    if (head) head.innerHTML = navHTML(r.raw === "" ? "/" : r.raw);
-    window.scrollTo(0, 0);
+  function crumb(parts) {
+    return '<div class="crumb">' + parts.map(function (p, i) {
+      var pre = i ? '<span class="sep">/</span>' : "";
+      return pre + (p[1] ? '<a href="' + p[1] + '">' + esc(p[0]) + "</a>" : "<span>" + esc(p[0]) + "</span>");
+    }).join("") + "</div>";
+  }
 
-    const p = r.parts;
-    /* 兼容别名：构建期曾用 #/note/ 与 #/gallery/，一律归一到 #/n/ 与 #/g/ */
-    if (p[0] === "note") p[0] = "n";
-    else if (p[0] === "gallery") p[0] = "g";
-    let html = "";
-    try {
-      if (p.length === 0 || p[0] === "") html = viewHome();
-      else if (p[0] === "n") html = viewNote(p.slice(1).join("/"));
-      else if (p[0] === "s") html = p.length > 1 ? viewSection(p.slice(1).join("/")) : viewSections();
-      else if (p[0] === "g") html = p.length > 1 ? viewGalleryItem(p.slice(1).join("/")) : viewGallery();
-      else if (p[0] === "x") html = viewStructured(p.length > 1 ? p.slice(1).join("/") : null);
-      else if (p[0] === "c") html = viewCharacters();
-      else if (p[0] === "map") html = viewGraph();
-      else if (p[0] === "q") html = viewSearch(p.length > 1 ? p.slice(1).join("/") : "");
-      else html = `<div class="empty">未知路径：${esc(r.raw)}<br><br><a class="wikilink" href="#/">← 返回总览</a></div>`;
-    } catch (e) {
-      html = `<div class="empty">渲染出错：${esc(e && e.message)}</div>`;
-      console.error(e);
+  function pageHead(kicker, title, lede) {
+    return '<div class="page">' +
+      '<div class="kicker">' + esc(kicker) + "</div>" +
+      '<h1 class="page-title">' + esc(title) + "</h1>" +
+      (lede ? '<p class="lede">' + lede + "</p>" : "") + "</div>";
+  }
+
+  function proseHtml(note, two) {
+    var sc = DVAR[dirOf(note.section)];
+    return '<div class="prose' + (two ? " two" : "") + '" style="--sc:' + sc + '">' + note.html + "</div>";
+  }
+
+  function tocOf(note) {
+    var out = [], re = /<h([23])[^>]*\bid="([^"]+)"[^>]*>([\s\S]*?)<\/h\1>/g, m;
+    while ((m = re.exec(note.html))) {
+      var t = m[3].replace(/<[^>]+>/g, "")
+        .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'").replace(/&amp;/g, "&").trim();
+      out.push({ lv: +m[1], id: m[2], t: t });
     }
-    const main = $("#main");
-    main.className = p[0] === "map" ? "wide" : "";
-    main.innerHTML = html;
-    if (p[0] === "map") mountGraph();
-    if (p[0] === "q") mountSearch();
-    if (p[0] === "g" && p.length === 1) mountGalleryFilter();
-    window.dispatchEvent(new CustomEvent("view:ready", { detail: p }));
+    return out;
   }
 
-  /* ---------------------------------------------------------- 首页 */
+  function edgeCount() {
+    var s = new Set();
+    NOTES.forEach(function (n) {
+      (n.links || []).forEach(function (t) { s.add(n.id + ">" + t); });
+    });
+    return s.size;
+  }
+
+  /* ---------------------------------------------------------------- 总览 */
 
   function viewHome() {
-    const m = IDX.meta || {};
-    const totalWords = NOTES.reduce((a, n) => a + (n.words || 0), 0);
-    const cards = (IDX.sections || []).map((s, i) => {
-      const inSec = NOTES.filter((n) => n.section === s.name);
-      const sample = inSec.slice().sort((a, b) => (b.words || 0) - (a.words || 0)).slice(0, 3);
-      const words = inSec.reduce((a, n) => a + (n.words || 0), 0);
-      const chips = sample.map((n) => `<span>${esc(n.title)}</span>`).join("");
-      return `<a class="card seccard" href="${secUrl(s.name)}">
-        <div class="idx">${String(i + 1).padStart(2, "0")} / ${String(IDX.sections.length).padStart(2, "0")}</div>
-        <div class="nm">${esc(s.name)}</div>
-        <div class="ct">${s.count} 条 · ${(words / 10000).toFixed(1)} 万字</div>
-        <div class="cols">${chips}</div>
-      </a>`;
+    var totalWords = NOTES.reduce(function (a, n) { return a + (n.words || 0); }, 0);
+    var rows = SECTIONS.map(function (s, i) {
+      var inSec = NOTES.filter(function (n) { return n.section === s.name; });
+      var w = inSec.reduce(function (a, n) { return a + (n.words || 0); }, 0);
+      var sample = inSec.slice().sort(function (a, b) { return (b.words || 0) - (a.words || 0); }).slice(0, 3);
+      return '<a href="' + secUrl(s.name) + '" style="--dc:' + DVAR[DIRS[i % 4]] + '">' +
+        '<span class="no">' + pad2(i + 1) + "</span>" +
+        '<span class="nm">' + esc(s.name) + "</span>" +
+        '<span class="meta">' + s.count + " 篇 / " + (w / 10000).toFixed(1) + " 万字</span>" +
+        '<span class="samp">' + sample.map(function (n) { return esc(n.title); }).join(" · ") + "</span></a>";
     }).join("");
 
-    const strip = (IDX.gallery || []).slice(0, 8).map((g) => `
-      <a class="ts" href="${galUrl(g.id)}" title="${esc(g.name)}">
-        <img src="${g.thumb || g.svg}" alt="${esc(g.name)}" loading="lazy">
-        <span>${esc(g.name)}</span>
-      </a>`).join("");
+    var thumbs = GALLERY.slice(0, 8).map(function (g) {
+      return '<a class="ts" href="' + galUrl(g.id) + '"><img src="' + esc(g.thumb || g.svg) +
+        '" alt="' + esc(g.name) + '" loading="lazy"><b>' + esc(g.name) + "</b></a>";
+    }).join("");
 
-    const featured = pickFeatured();
+    var quad = [
+      ["#/x", "结构化档案", 0, "9 组对照表与键值表"],
+      ["#/c", "角色名录", 1, (IDX.characters ? IDX.characters.length : 0) + " 条人物字段"],
+      ["#/g", "图版图鉴", 3, GALLERY.length + " 张手绘图与总览 Canvas"],
+      ["#/map", "关系网络", 2, NOTES.length + " 节点 / " + edgeCount() + " 条双链"]
+    ].map(function (q) {
+      return '<a href="' + q[0] + '" style="--dc:' + DVAR[DIRS[q[2]]] + '"><b>' + q[1] + "</b><span>" + q[3] + "</span></a>";
+    }).join("");
 
-    return `
-    <section class="hero">
-      <div class="kicker">OC 世界观设定集 · 结构化收录</div>
-      <h1>Sublantis<br><span class="thin">沉入潜意识的亚特兰蒂斯</span></h1>
-      <p class="lede">神秘学被工程化、CCRU 伪史与计算机科学对位的十六进制世界。本站收录全部原文笔记、
-      结构化条目与手绘关系图鉴。</p>
-      <p class="scope mono">收录范围：仅 Sublantis / HMLC 本体设定 —— 作者其他作品与未来作品的规划不入站。</p>
-      <div class="stats">
-        <div class="stat"><div class="n">${NOTES.length}</div><div class="l">笔记</div></div>
-        <div class="stat"><div class="n">${(IDX.gallery || []).length}</div><div class="l">图鉴</div></div>
-        <div class="stat"><div class="n">${(IDX.sections || []).length}</div><div class="l">分类</div></div>
-        <div class="stat"><div class="n">${(totalWords / 10000).toFixed(1)}万</div><div class="l">字数</div></div>
-        <div class="stat"><div class="n">${(IDX.characters || []).length}</div><div class="l">角色条目</div></div>
-      </div>
-    </section>
-
-    <h2 class="sec-title">分类总览</h2>
-    <div class="grid g3">${cards}</div>
-
-    <h2 class="sec-title">索引长文</h2>
-    <div class="grid g2">${featured.map((n) => `
-      <a class="card" href="${noteUrl(n.id)}" style="display:block">
-        <div class="pill a">${esc(n.section || "")}</div>
-        <div style="font-weight:700;font-size:16px;margin:9px 0 6px">${esc(n.title)}</div>
-        <div style="font-size:13px;color:var(--ink-3);line-height:1.65">${esc((n.blurb || "").slice(0, 130))}</div>
-      </a>`).join("")}
-    </div>
-
-    <h2 class="sec-title">图鉴一览 <span class="more"><a href="#/g">全部 ${(IDX.gallery || []).length} 张 →</a></span></h2>
-    <div class="thumbstrip">${strip}</div>
-
-    <h2 class="sec-title">快速进入</h2>
-    <div class="grid g4">
-      ${quick("结构化数据", "#/x", "命名对照 / Zone / 纪年 / 神秘学-技术对应")}
-      ${quick("图鉴画廊", "#/g", "24 张手绘关系图，自动渲染为矢量图")}
-      ${quick("关系图", "#/map", "全站 wikilink 力导向网络")}
-      ${quick("全文检索", "#/q", "对全部原文正文做子串检索")}
-    </div>
-    <p class="dim mono" style="margin-top:44px;font-size:11px">
-      源：${esc(m.source || "")} · 构建 ${esc(m.builtAt || "")} · 原文快照见 <span class="pill">笔记/</span> 目录
-    </p>`;
+    return docbar("总览", "<span>" + NOTES.length + " 篇</span><span>" + hexDay() + "</span>") +
+      '<div class="frame">' +
+      '<section class="mast">' +
+      "<div>" +
+      '<div class="kicker">OC 世界观设定集</div>' +
+      "<h1>Sublantis</h1>" +
+      '<p class="cn">沉入潜意识<span class="em">的</span>亚特兰蒂斯</p>' +
+      '<p class="lede">神秘学被工程化，CCRU 伪史与计算机科学对位。十六个 Zone 共用一套进制，' +
+      "一份被归档的世界，而不是一部被讲述的小说。</p>" +
+      '<span class="scope">收录范围：仅 Sublantis / HMLC 本体设定。作者其他作品与未来作品的规划不入站。' +
+      "原文逐字保留，图版由 Excalidraw 官方导出器转换，字体已内联。</span>" +
+      "</div>" +
+      '<div class="facts">' +
+      '<div class="row"><span class="k">笔记</span><span class="n">' + NOTES.length + "</span></div>" +
+      '<div class="row"><span class="k">图版</span><span class="n">' + GALLERY.length + "</span></div>" +
+      '<div class="row"><span class="k">分类</span><span class="n">' + SECTIONS.length + "</span></div>" +
+      '<div class="row"><span class="k">字数</span><span class="n">' + (totalWords / 10000).toFixed(1) + "万</span></div>" +
+      "</div></section>" +
+      '<h2 class="sec-title">分类索引<span class="cnt">' + SECTIONS.length + " 类</span></h2>" +
+      '<div class="rowidx">' + rows + "</div>" +
+      '<h2 class="sec-title">图版<span class="cnt">' + GALLERY.length + ' 张</span>' +
+      '<span class="more"><a href="#/g">全部 →</a></span></h2>' +
+      '<div class="thumbstrip">' + thumbs + "</div>" +
+      '<h2 class="sec-title">入口</h2>' +
+      '<div class="quad">' + quad + "</div></div>";
   }
-
-  function quick(t, href, d) {
-    return `<a class="card seccard" href="${href}"><div class="nm">${t}</div><div class="ct" style="color:var(--ink-3)">${d}</div></a>`;
-  }
-
-  function pickFeatured() {
-    const wanted = ["Sublantis 世界观总览（MOC）", "命名法对照表", "神秘学-技术对应关系", "Zone体系（0–9与A–F）",
-      "十六进制纪年与时间标准化", "神性实体进化路线"];
-    const out = [];
-    for (const w of wanted) {
-      const hit = NOTES.find((n) => n.base === w || n.id.endsWith("/" + w) || n.id === w);
-      if (hit) out.push(hit);
-    }
-    const long = NOTES.filter((n) => !out.includes(n) && (n.words || 0) > 1500).sort((a, b) => b.words - a.words).slice(0, 6 - out.length);
-    return out.concat(long).slice(0, 6);
-  }
-
-  /* ---------------------------------------------------------- 分类 */
 
   function viewSections() {
-    const cards = (IDX.sections || []).map((s, i) => {
-      const cols = s.collections.map((c) => `<div class="noteitem" data-href="${secUrl(s.name)}#${esc(c.name)}">
-        <div class="t">${esc(c.name)}</div><div class="d">${c.ids.length} 条</div>
-        <div class="b">${esc(c.blurb || "")}</div></div>`).join("");
-      return `<h2 class="sec-title">${String(i + 1).padStart(2, "0")} · ${esc(s.name)}
-        <span class="pill">${s.count} 条</span></h2>
-        ${(s.intro || []).length ? `<p class="lede">${esc(s.intro.join(" "))}</p>` : ""}
-        <div class="notelist" style="margin-bottom:26px">${cols}</div>`;
+    var rows = SECTIONS.map(function (s, i) {
+      var inSec = NOTES.filter(function (n) { return n.section === s.name; });
+      var w = inSec.reduce(function (a, n) { return a + (n.words || 0); }, 0);
+      var sample = inSec.slice().sort(function (a, b) { return (b.words || 0) - (a.words || 0); }).slice(0, 4);
+      return '<a href="' + secUrl(s.name) + '" style="--dc:' + DVAR[DIRS[i % 4]] + '">' +
+        '<span class="no">' + pad2(i + 1) + "</span>" +
+        '<span class="nm">' + esc(s.name) + "</span>" +
+        '<span class="meta">' + s.count + " 篇 / " + (w / 10000).toFixed(1) + " 万字</span>" +
+        '<span class="samp">' + sample.map(function (n) { return esc(n.title); }).join(" · ") + "</span></a>";
     }).join("");
-    return `<div class="kicker">Contents</div><h1 class="page-title">分类浏览</h1>
-      <p class="lede">按 MOC 的世界观分区组织，共 ${(IDX.sections || []).length} 个大类、${NOTES.length} 篇笔记。</p>
-      <div style="margin-top:30px">${cards}</div>`;
+    return docbar("分类", "<span>" + SECTIONS.length + " 类</span>") +
+      '<div class="frame">' + pageHead("目录", "分类索引", "按总览 MOC 的两级树展开。编号为阅读顺序，颜色为四方位色，按索引循环使用。") +
+      '<div class="rowidx">' + rows + "</div></div>";
   }
 
   function viewSection(name) {
-    const s = (IDX.sections || []).find((x) => x.name === name);
-    if (!s) return `<div class="empty">没有这个分类：${esc(name)}</div>`;
-    const cols = s.collections.map((c) => {
-      const items = c.ids.map((id) => {
-        const n = byId.get(id);
-        if (!n) return "";
-        return `<div class="noteitem" data-href="${noteUrl(id)}">
-          <div class="t">${esc(n.title)}</div>
-          <div class="d">${n.words || 0} 字</div>
-          <div class="b">${esc(n.blurb || "")}</div></div>`;
-      }).join("");
-      return `<h2 class="sec-title" id="${esc(c.name)}">${esc(c.name)} <span class="pill">${c.ids.length} 条</span></h2>
-        <div class="notelist" style="margin-bottom:20px">${items}</div>`;
+    var idx = secIndex.has(name) ? secIndex.get(name) : -1;
+    var s = idx >= 0 ? SECTIONS[idx] : null;
+    if (!s) return viewSections();
+    var inSec = NOTES.filter(function (n) { return n.section === name; });
+    var items = inSec.sort(function (a, b) {
+      var ia = ORDER_IDX.has(a.id) ? ORDER_IDX.get(a.id) : 1e9;
+      var ib = ORDER_IDX.has(b.id) ? ORDER_IDX.get(b.id) : 1e9;
+      return ia - ib;
+    }).map(function (n) {
+      return '<div class="noteitem" data-href="' + noteUrl(n.id) + '">' +
+        '<span class="t">' + esc(n.title) + "</span>" +
+        '<span class="d">' + words(n.words || 0) + "</span>" +
+        (n.blurb ? '<span class="b">' + esc(n.blurb) + "</span>" : "") + "</div>";
     }).join("");
-    return `<div class="crumb"><a href="#/s">分类浏览</a><span class="sep">/</span>${esc(s.name)}</div>
-      <h1 class="page-title">${esc(s.name)}</h1>
-      ${(s.intro || []).length ? `<p class="lede">${esc(s.intro.join(" "))}</p>` : ""}
-      <div style="margin-top:26px">${cols}</div>`;
+
+    return docbar(name, "<span>" + s.count + " 篇</span><span>" + hexDay() + "</span>") +
+      '<div class="frame"><div class="page">' +
+      crumb([["总览", "#/"], ["分类", "#/s"], [name, null]]) +
+      '<div class="kicker">分类 ' + pad2(idx + 1) + " / " + pad2(SECTIONS.length) + "</div>" +
+      '<h1 class="page-title">' + esc(name) + "</h1>" +
+      ((s.intro && s.intro.length) ? '<p class="lede">' + esc(s.intro.join(" ")) + "</p>" : "") +
+      "</div>" +
+      '<div class="rowidx" style="margin-top:26px">' + items + "</div></div>";
   }
 
-  /* ---------------------------------------------------------- 笔记 */
+  /* ---------------------------------------------------------------- 笔记 */
+
+  /* 统计正文里「连续散文」的比例：表格 / 项目符号多的笔记分栏会很难读 */
+  function runningText(html) {
+    var ps = html.match(/<p>[\s\S]*?<\/p>/g) || [];
+    var len = 0;
+    ps.forEach(function (s) { len += s.replace(/<[^>]+>/g, "").length; });
+    return { len: len, n: ps.length };
+  }
+
+  function useTwoColumn(n) {
+    if (n.kind === "gallery") return false;
+    if ((n.words || 0) < 900) return false;
+    if (window.innerWidth < 1180) return false;
+    var pref = localStorage.getItem("sub-cols");
+    if (pref === "one") return false;
+    if (pref === "two") return true;
+    var rt = runningText(n.html || "");
+    return rt.len >= 1500 && rt.n >= 6;
+  }
+
+  function notFound(id) {
+    return docbar("未找到", "") + '<div class="frame"><div class="page">' +
+      '<div class="kicker">404</div><h1 class="page-title">未收录的条目</h1>' +
+      '<p class="lede mono dim">' + esc(id) + "</p>" +
+      '<div class="empty">这份档案里没有这一页。<br><a href="#/" style="text-decoration:underline">回到总览</a></div></div></div>';
+  }
 
   function viewNote(id) {
-    const n = byId.get(id);
-    if (!n) return `<div class="empty">找不到笔记：${esc(id)}<br><br><a class="wikilink" href="#/">← 返回总览</a></div>`;
+    var n = byId.get(id);
+    if (!n) return notFound(id);
+    var two = useTwoColumn(n);
+    var toc = tocOf(n);
+    var i = ORDER_IDX.has(id) ? ORDER_IDX.get(id) : -1;
+    var prev = i > 0 ? byId.get(ORDER[i - 1]) : null;
+    var next = (i >= 0 && i < ORDER.length - 1) ? byId.get(ORDER[i + 1]) : null;
 
-    if (n.kind === "gallery") {
-      const g = galByName.get(n.id.replace(/\.excalidraw$/, "")) || galById.get(n.id);
-      if (g) return viewGalleryItem(g.id);
+    var aside = "<aside>";
+    if (toc.length) {
+      aside += '<div class="panel"><h4>本页目录</h4><ol>' + toc.map(function (t) {
+        return '<li><a href="#" data-toc="' + esc(t.id) + '">' + esc(t.t) + "</a></li>";
+      }).join("") + "</ol></div>";
     }
-
-    const toc = extractTOC(n.html);
-    const aside = `
-      <aside>
-        ${toc.length ? `<div class="panel"><h4>本页目录</h4><ol>${toc.map((t) => `<li><a href="#${enc(n.id)}-${esc(t.id)}" data-toc="${esc(t.id)}">${esc(t.text)}</a></li>`).join("")}</ol></div>` : ""}
-        ${n.backlinks && n.backlinks.length ? `<div class="panel"><h4>反向链接 ${n.backlinks.length}</h4><ul>${n.backlinks.slice(0, 40).map((b) => {
-          const t = byId.get(b);
-          return t ? `<li><a href="${noteUrl(b)}">${esc(t.title)}</a></li>` : "";
-        }).join("")}</ul></div>` : ""}
-        ${n.links && n.links.length ? `<div class="panel"><h4>指向 ${n.links.length}</h4><ul>${n.links.slice(0, 40).map((b) => {
-          const t = byId.get(b);
-          return t ? `<li><a href="${noteUrl(b)}">${esc(t.title)}</a></li>` : "";
-        }).join("")}</ul></div>` : ""}
-        <div class="panel"><h4>元数据</h4>
-          <div class="mono" style="font-size:11px;color:var(--ink-3);line-height:2">
-            <div>路径 ${esc(n.path)}</div>
-            <div>字数 ${n.words || 0}</div>
-            <div>出链 ${(n.links || []).length} · 入链 ${(n.backlinks || []).length}</div>
-            ${RAW_NOTES ? `<div><a class="wikilink" href="${fileUrl(n.path)}">查看原始 Markdown ↗</a></div>` : ""}
-          </div>
-        </div>
-      </aside>`;
-
-    return `<div class="reader">
-      <article>
-        <div class="crumb">
-          <a href="#/">总览</a><span class="sep">/</span>
-          ${n.section ? `<a href="${secUrl(n.section)}">${esc(n.section)}</a>` : ""}
-          ${n.collection && n.collection !== n.section ? `<span class="sep">/</span><span>${esc(n.collection)}</span>` : ""}
-        </div>
-        <header class="article-head">
-          <h1>${esc(n.title)}</h1>
-          <div class="article-meta">
-            <span><b>${esc(n.section || "未分类")}</b></span>
-            <span>${n.words || 0} 字</span>
-            <span>${(n.links || []).length} 出链</span>
-            <span>${(n.backlinks || []).length} 入链</span>
-            <span style="opacity:.65">${esc(n.path)}</span>
-          </div>
-        </header>
-        <div class="prose">${n.html || `<p class="dim">（此笔记无正文）</p>`}</div>
-        ${pager(n.id)}
-      </article>
-      ${aside}
-    </div>`;
-  }
-
-  function pager(id) {
-    const i = ORDER_IDX.has(id) ? ORDER_IDX.get(id) : -1;
-    if (i < 0) return "";
-    const prev = i > 0 ? byId.get(ORDER[i - 1]) : null;
-    const next = i < ORDER.length - 1 ? byId.get(ORDER[i + 1]) : null;
-    return `<nav class="pager">
-      ${prev ? `<a href="${noteUrl(prev.id)}"><span class="dir">← 上一篇</span><span class="t">${esc(prev.title)}</span></a>` : `<span class="ph"></span>`}
-      ${next ? `<a class="nx" href="${noteUrl(next.id)}"><span class="dir">下一篇 →</span><span class="t">${esc(next.title)}</span></a>` : `<span class="ph"></span>`}
-    </nav>`;
-  }
-
-  function extractTOC(html) {
-    const out = [];
-    if (!html) return out;
-    const re = /<h([23])[^>]*\bid="([^"]+)"[^>]*>([\s\S]*?)<\/h\1>/g;
-    let m;
-    while ((m = re.exec(html))) {
-      const txt = m[3].replace(/<[^>]+>/g, "").trim();
-      if (txt) out.push({ lvl: +m[1], id: m[2], text: txt });
+    if (n.backlinks && n.backlinks.length) {
+      aside += '<div class="panel"><h4>反向链接 ' + n.backlinks.length + "</h4><ul>" +
+        n.backlinks.slice(0, 40).map(function (b) {
+          var t = byId.get(b);
+          return '<li><a href="' + noteUrl(b) + '">' + esc(t ? t.title : b) + "</a></li>";
+        }).join("") + "</ul></div>";
     }
-    return out;
+    if (n.links && n.links.length) {
+      aside += '<div class="panel"><h4>指向 ' + n.links.length + "</h4><ul>" +
+        n.links.slice(0, 40).map(function (b) {
+          var t = byId.get(b);
+          return '<li><a href="' + noteUrl(b) + '">' + esc(t ? t.title : b) + "</a></li>";
+        }).join("") + "</ul></div>";
+    }
+    aside += '<div class="panel"><h4>元数据</h4><div class="kv">' +
+      "<div>路径 <b>" + esc(n.path) + "</b></div>" +
+      "<div>字数 <b>" + (n.words || 0) + "</b></div>" +
+      "<div>分类 <b>" + esc(n.section || "") + "</b></div>" +
+      (RAW_NOTES ? '<div><a href="' + fileUrl(n.path) + '" target="_blank">查看原始 Markdown ↗</a></div>' : "") +
+      "</div></div></aside>";
+
+    var pager = '<nav class="pager">' +
+      (prev ? '<a href="' + noteUrl(prev.id) + '"><span class="dir">← 上一篇</span><span class="t">' + esc(prev.title) + "</span></a>" : "<span></span>") +
+      (next ? '<a class="nx" href="' + noteUrl(next.id) + '"><span class="dir">下一篇 →</span><span class="t">' + esc(next.title) + "</span></a>" : "<span></span>") +
+      "</nav>";
+
+    return docbar(n.section || "笔记", "<span>" + words(n.words || 0) + "</span><span>" + hexDay() + "</span>") +
+      '<div class="frame"><div class="reader">' +
+      "<article>" +
+      crumb([["总览", "#/"], ["分类", "#/s"], [n.section || "其他", secUrl(n.section || "")], [n.title, null]]) +
+      '<div class="article-head"><h1>' + esc(n.title) + "</h1>" +
+      '<div class="article-meta">' +
+      "<span>分类 <b>" + esc(n.section || "") + "</b></span>" +
+      "<span>" + (n.words || 0) + " 字</span>" +
+      "<span>出链 " + ((n.links || []).length) + "</span>" +
+      "<span>入链 " + ((n.backlinks || []).length) + "</span>" +
+      '<span class="path">' + esc(n.path) + "</span>" +
+      '<button class="cols-toggle' + (two ? " on" : "") + '" id="colsbtn">' + (two ? "双栏" : "单栏") + "</button>" +
+      "</div></div>" + proseHtml(n, two) + pager + "</article>" + aside +
+      "</div></div>";
   }
 
-  /* ---------------------------------------------------------- 角色 */
-
-  const FIELD_LABEL = {
-    fullname: "全名", gender: "性别", deadname: "deadname", birth: "出生地",
-    major: "专业", socionics: "Socionics", mbti: "MBTI", psy: "超心理定位",
-    family: "家庭", position: "定位",
-  };
+  /* ---------------------------------------------------------------- 角色 */
 
   function viewCharacters() {
-    const list = IDX.characters || [];
-    if (!list.length) return `<div class="empty">没有抽到角色条目</div>`;
-    const cards = list.map((c) => {
-      const rows = Object.keys(FIELD_LABEL)
-        .filter((k) => c.fields && c.fields[k] && k !== "socionics")
-        .map((k) => `<dt>${FIELD_LABEL[k]}</dt><dd>${mdInline(c.fields[k])}</dd>`).join("");
-      const soc = c.fields && c.fields.socionics ? c.fields.socionics : "";
-      return `<div class="charcard">
-        <div class="hd">
-          <div>
-            <div class="nm">${esc(c.name)}</div>
-            <div class="sub">${esc(c.section || "")} · ${esc(c.title)}</div>
-          </div>
-          ${soc ? `<div class="soc">${esc(soc)}</div>` : ""}
-        </div>
-        <dl>${rows || `<dt>—</dt><dd class="dim">此条目为汇总页，字段见正文</dd>`}</dl>
-        <div class="bl"><a class="wikilink" href="${noteUrl(c.id)}">打开条目 →</a></div>
-      </div>`;
+    var list = IDX.characters || [];
+    var cards = list.map(function (c, i) {
+      var f = c.fields || {};
+      var keys = Object.keys(FIELD_LABEL).filter(function (k) { return f[k]; });
+      var kv = keys.map(function (k) {
+        return '<div class="row"><span class="k">' + FIELD_LABEL[k] + '</span><span class="v">' + esc(f[k]) + "</span></div>";
+      }).join("");
+      return '<div class="charcard">' +
+        '<div><div class="nm">' + esc(c.name) + "</div>" +
+        '<div class="sub2">' + pad2(i + 1) + " / " + esc(c.title || "") + "</div>" +
+        (f.socionics ? '<span class="soc">' + esc(f.socionics) + "</span>" : "") +
+        (c.id ? '<div style="margin-top:10px"><a class="pill" href="' + noteUrl(c.id) + '">打开条目</a></div>' : "") +
+        "</div>" +
+        '<div class="kv">' + (kv || '<div class="dim mono" style="font-size:11px">此条目为汇总页，字段见正文</div>') + "</div></div>";
     }).join("");
-    return `<div class="kicker">Personnel</div><h1 class="page-title">角色名录</h1>
-      <p class="lede">从角色档案类笔记中自动抽取的结构化字段（姓名 / 性别 / 专业 / Socionics · MBTI / 超心理定位 / 家庭等）。
-      字段可能不完整，完整设定以各条目正文为准。</p>
-      <div class="grid g3" style="margin-top:26px">${cards}</div>`;
+
+    return docbar("角色", "<span>" + list.length + " 条</span>") +
+      '<div class="frame">' +
+      pageHead("人物档案", "角色名录", "字段从角色档案笔记中自动抽取，可能不完整，完整设定以条目正文为准。") +
+      "<div>" + cards + "</div></div>";
   }
 
-  /* ---------------------------------------------------------- 图鉴 */
+  /* ---------------------------------------------------------------- 图版 */
 
   function viewGallery() {
-    const cvs = IDX.canvas;
-    const canvasCard = cvs ? `
-      <a class="gal-card" href="#/g/__canvas" style="grid-column:1/-1">
-        <div class="gal-thumb" style="height:260px"><img src="${cvs.svg}" alt="${esc(cvs.name)}" loading="lazy"></div>
-        <div class="gal-meta">
-          <div class="nm">${esc(cvs.name)} <span class="pill a">Canvas</span></div>
-          ${cvs.note ? `<div class="nt">${esc(cvs.note)}</div>` : ""}
-          <div class="cd">${(cvs.nodes || []).length} 节点 · ${(cvs.edges || []).length} 连线</div>
-        </div>
-      </a>` : "";
-    const cards = (IDX.gallery || []).map((g) => `
-      <a class="gal-card" href="${galUrl(g.id)}" data-q="${esc((g.name + " " + (g.note || "") + " " + (g.elinks || []).join(" ")).toLowerCase())}">
-        <div class="gal-thumb"><img src="${g.thumb || g.svg}" alt="${esc(g.name)}" loading="lazy"></div>
-        <div class="gal-meta">
-          <div class="nm">${esc(g.name)}</div>
-          ${g.note ? `<div class="nt">${esc(g.note)}</div>` : ""}
-          <div class="cd">${(g.texts || []).length} 文本块 · ${(g.elinks || []).length} 关联</div>
-        </div>
-      </a>`).join("");
-    return `<div class="kicker">Atlas</div><h1 class="page-title">图鉴画廊</h1>
-      <p class="lede">24 张 Excalidraw 手绘图，均由 <b>Excalidraw 官方导出器</b>从源数据转换而来 —— 手绘线条抖动、hachure 填充、Excalifont 字体与源文件完全一致，字体已内联，SVG 可无损缩放。另有 1 张 Obsidian Canvas 总览。点击查看大图与文本大纲。</p>
-      <input id="galfilter" class="galfilter" type="search" placeholder="筛选：名称 / 摘要 / 关联笔记" autocomplete="off">
-      <div class="mono dim" id="galfilter-note" style="font-size:11px;margin:0 0 14px"></div>
-      <div class="gal-grid" style="margin-top:6px">${canvasCard}${cards}</div>`;
+    var cards = GALLERY.map(function (g, i) {
+      return '<a class="gal-card" href="' + galUrl(g.id) + '" data-q="' +
+        esc((g.name + " " + (g.note || "") + " " + (g.elinks || []).join(" ")).toLowerCase()) + '">' +
+        '<span class="gal-thumb"><img src="' + esc(g.thumb || g.svg) + '" alt="' + esc(g.name) + '" loading="lazy"></span>' +
+        '<span class="gal-meta"><span class="nm">' + esc(g.name) + "</span>" +
+        '<span class="nt">' + esc(g.note || "") + "</span>" +
+        '<span class="cd">' + pad2(i + 1) + " / " + (g.texts || []).length + " 文本块 · " + (g.elinks || []).length + " 关联</span></span></a>";
+    }).join("");
+
+    var canvasCard = "";
+    if (IDX.canvas) {
+      canvasCard = '<a class="gal-card" href="#/g/__canvas" data-q="canvas 总览 世界观">' +
+        '<span class="gal-thumb"><img src="' + esc(IDX.canvas.svg) + '" alt="Canvas 总览" loading="lazy"></span>' +
+        '<span class="gal-meta"><span class="nm">' + esc(IDX.canvas.name) + "</span>" +
+        '<span class="nt">' + esc(IDX.canvas.note || "") + "</span>" +
+        '<span class="cd">Canvas · ' + (IDX.canvas.nodes || []).length + " 节点 · " + (IDX.canvas.edges || []).length + " 连线</span></span></a>";
+    }
+
+    return docbar("图版", "<span>" + GALLERY.length + " 张</span>") +
+      '<div class="frame">' +
+      pageHead("图版", "图鉴画廊", "24 张手绘图由 Excalidraw 官方导出器从源数据转换而来，手绘线条与字体与源文件一致，字体已内联。另有 1 张 Obsidian Canvas 总览。") +
+      '<input id="galfilter" class="galfilter" type="search" placeholder="筛选：名称 / 摘要 / 关联笔记" autocomplete="off">' +
+      '<div class="mono dim" id="galfilter-note" style="font-size:10px;letter-spacing:.1em;margin-bottom:12px"></div>' +
+      '<div class="gal-grid">' + canvasCard + cards + "</div></div>";
   }
 
   function viewCanvas() {
-    const c = IDX.canvas;
-    if (!c) return `<div class="empty">没有 Canvas 数据</div>`;
-    const files = (c.nodes || []).filter((n) => n.type === "file");
-    const groups = (c.nodes || []).filter((n) => n.type === "group");
-    const texts = (c.nodes || []).filter((n) => n.type === "text");
-    const uniq = new Map();
-    for (const f of files) {
-      const k = f.note || f.label;
-      if (!uniq.has(k)) uniq.set(k, f);
-    }
-    const linkList = [...uniq.values()].map((f) => `<li>${f.note
-      ? `<a class="wikilink" href="${noteUrl(f.note)}">${esc(f.label)}</a>`
-      : `<span class="wikilink dead">${esc(f.label)}</span>`}</li>`).join("");
-    const groupList = groups.map((g) => `<li>${esc(g.label || "(未命名分区)")}</li>`).join("");
-    return `<div class="crumb"><a href="#/g">图鉴画廊</a><span class="sep">/</span>Canvas 总览</div>
-      <h1 class="page-title" style="margin-bottom:8px">${esc(c.name)}</h1>
-      <p class="lede" style="margin-bottom:22px">${esc(c.note || "")}</p>
-      <div class="gal-view" style="max-height:none"><img class="zoomable" src="${c.svg}" alt="${esc(c.name)}"></div>
-      <div class="grid g3" style="margin-top:22px">
-        <div class="panel card"><h4 class="mono dim" style="font-size:10.5px;letter-spacing:.16em;margin:0 0 10px">关联笔记 (${uniq.size})</h4>
-          <ul style="margin:0;padding-left:16px;font-size:13px;line-height:1.9">${linkList}</ul></div>
-        <div class="panel card"><h4 class="mono dim" style="font-size:10.5px;letter-spacing:.16em;margin:0 0 10px">分区 (${groups.length})</h4>
-          <ul style="margin:0;padding-left:16px;font-size:13px;line-height:1.9">${groupList}</ul></div>
-        <div class="panel card"><h4 class="mono dim" style="font-size:10.5px;letter-spacing:.16em;margin:0 0 10px">说明文本 (${texts.length})</h4>
-          <ul style="margin:0;padding-left:16px;font-size:12.5px;color:var(--ink-2);line-height:1.8">${texts.map((t) => `<li>${esc(t.label)}</li>`).join("")}</ul></div>
-      </div>`;
+    var c = IDX.canvas;
+    if (!c) return notFound("canvas");
+    var nodes = (c.nodes || []).filter(function (n) { return n.type === "file" && n.note; });
+    var groups = (c.nodes || []).filter(function (n) { return n.type === "group" && n.label; });
+    var texts = (c.nodes || []).filter(function (n) { return n.type === "text" && n.label; });
+
+    var aside = '<div class="g2 grid" style="margin-top:28px">' +
+      '<div class="card"><h4 class="mono" style="font-size:9.5px;letter-spacing:.2em;color:var(--ink-3);margin:0 0 10px">关联笔记 ' + nodes.length + "</h4>" +
+      '<ul class="mono" style="list-style:none;margin:0;padding:0;font-size:11.5px;line-height:1.9">' +
+      nodes.slice(0, 60).map(function (n) {
+        return '<li><a href="' + noteUrl(n.note) + '" style="border-bottom:1px solid var(--line)">' + esc(n.label) + "</a></li>";
+      }).join("") + "</ul></div>" +
+      '<div class="card"><h4 class="mono" style="font-size:9.5px;letter-spacing:.2em;color:var(--ink-3);margin:0 0 10px">分区 ' + groups.length + "</h4>" +
+      '<ul class="mono" style="list-style:none;margin:0;padding:0;font-size:11.5px;line-height:1.9">' +
+      groups.map(function (g) { return "<li>" + esc(g.label) + "</li>"; }).join("") + "</ul></div></div>";
+
+    return docbar("图版", "<span>Canvas</span>") +
+      '<div class="frame">' +
+      crumb([["总览", "#/"], ["图版", "#/g"], ["Canvas 总览", null]]) +
+      '<div class="page"><div class="kicker">图版</div>' +
+      '<h1 class="page-title">' + esc(c.name) + "</h1>" +
+      '<p class="lede">' + esc(c.note || "") + "</p></div>" +
+      '<div class="gal-view" style="margin-top:26px"><img class="zoomable" src="' + esc(c.svg) + '" alt="' + esc(c.name) + '"></div>' +
+      aside +
+      (texts.length ? '<div class="mono dim" style="font-size:10.5px;line-height:1.9;margin-top:20px;border-top:1px solid var(--line);padding-top:14px">' +
+        texts.map(function (t) { return esc(t.label); }).join("<br>") + "</div>" : "") +
+      "</div>";
   }
 
   function viewGalleryItem(id) {
     if (id === "__canvas") return viewCanvas();
-    const g = galByName.get(id) || galById.get(id) || (IDX.gallery || []).find((x) => x.name === id);
-    if (!g) return `<div class="empty">找不到图鉴：${esc(id)}<br><br><a class="wikilink" href="#/g">← 图鉴画廊</a></div>`;
-    const seen = new Set();
-    const rel = (g.elinks || []).map((l) => {
-      const m = l.match(/^(.*?)\s*\[\[([^\]\|]+)(?:\|([^\]]*))?\]\]\s*$/);
-      if (!m) return `<li>${esc(l)}</li>`;
-      const target = m[2];
-      const label = m[3] || target.split("/").pop();
-      if (seen.has(label)) return "";
-      seen.add(label);
-      const n = NOTES.find((x) => x.base === target.split("/").pop() || x.id === target || x.title === target);
-      return `<li>${n ? `<a class="wikilink" href="${noteUrl(n.id)}">${esc(label)}</a>` : `<span class="wikilink dead">${esc(label)}</span>`}</li>`;
-    }).join("");
-    const texts = (g.texts || []).map((t) => `<li>${esc(t)}</li>`).join("");
-    return `<div class="crumb"><a href="#/g">图鉴画廊</a><span class="sep">/</span>${esc(g.name)}</div>
-      <div style="display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:28px;align-items:start" class="gal-detail">
-        <div>
-          <div class="gal-view"><img class="zoomable" src="${g.svg}" alt="${esc(g.name)}"></div>
-        </div>
-        <aside style="position:sticky;top:82px">
-          <h1 style="font-size:22px;margin:0 0 8px">${esc(g.name)}</h1>
-          ${g.note ? `<p class="lede" style="font-size:13.5px">${esc(g.note)}</p>` : ""}
-          ${rel ? `<div class="panel card" style="margin-top:16px"><h4 class="mono dim" style="font-size:10.5px;letter-spacing:.16em;margin:0 0 10px">关联笔记</h4><ul style="margin:0;padding-left:16px;font-size:13px">${rel}</ul></div>` : ""}
-          ${texts ? `<div class="panel card" style="margin-top:14px"><h4 class="mono dim" style="font-size:10.5px;letter-spacing:.16em;margin:0 0 10px">图中文本 (${(g.texts || []).length})</h4><ul style="margin:0;padding-left:16px;font-size:12.5px;color:var(--ink-2)">${texts}</ul></div>` : ""}
-          <div class="mono" style="font-size:11px;color:var(--ink-3);margin-top:14px">
-            <a class="wikilink" href="${g.svg}" target="_blank">原图 SVG ↗</a>${RAW_NOTES ? `<br>
-            <a class="wikilink" href="${fileUrl(g.path)}">原始 Markdown ↗</a>` : ""}
-          </div>
-        </aside>
-      </div>`;
+    var g = galById.get(id) || galByName.get(id);
+    if (!g) return notFound(id);
+    var seen = new Set();
+    var elinks = (g.elinks || []).map(function (line) {
+      var t = line.replace(/^[^:]*:\s*/, "");
+      var m = /\[\[([^\]\|]+)(?:\|([^\]]*))?\]\]/.exec(t);
+      if (!m) return null;
+      var label = (m[2] || m[1]).trim();
+      return { target: m[1].trim(), label: label };
+    }).filter(function (e) {
+      if (!e || seen.has(e.label)) return false;
+      seen.add(e.label);
+      return true;
+    });
+
+    var linkList = elinks.length ?
+      '<ul class="mono" style="list-style:none;margin:0;padding:0;font-size:11.5px;line-height:1.9">' +
+      elinks.map(function (e) {
+        var n = byId.get(e.target);
+        return "<li>" + (n ? '<a href="' + noteUrl(n.id) + '" style="border-bottom:1px solid var(--line)">' + esc(e.label) + "</a>"
+          : '<span class="dim">' + esc(e.label) + "</span>") + "</li>";
+      }).join("") + "</ul>" : '<div class="mono dim" style="font-size:11px">这张图没有元素级关联笔记</div>';
+
+    var texts = (g.texts || []).length ?
+      '<ul class="mono" style="list-style:none;margin:0;padding:0;font-size:11px;line-height:1.85;color:var(--ink-2)">' +
+      g.texts.slice(0, 90).map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>"
+      : '<div class="mono dim" style="font-size:11px">无</div>';
+
+    return docbar("图版", "<span>" + (g.texts || []).length + " 文本块</span>") +
+      '<div class="frame">' +
+      crumb([["总览", "#/"], ["图版", "#/g"], [g.name, null]]) +
+      '<div class="page"><div class="kicker">图版</div>' +
+      '<h1 class="page-title">' + esc(g.name) + "</h1>" +
+      (g.note ? '<p class="lede">' + esc(g.note) + "</p>" : "") + "</div>" +
+      '<div class="gal-view" style="margin-top:24px"><img class="zoomable" src="' + esc(g.svg) + '" alt="' + esc(g.name) + '"></div>' +
+      '<div class="g2 grid" style="margin-top:28px">' +
+      '<div class="card"><h4 class="mono" style="font-size:9.5px;letter-spacing:.2em;color:var(--ink-3);margin:0 0 10px">关联笔记 ' + elinks.length + "</h4>" + linkList + "</div>" +
+      '<div class="card"><h4 class="mono" style="font-size:9.5px;letter-spacing:.2em;color:var(--ink-3);margin:0 0 10px">图中文本 ' + (g.texts || []).length + "</h4>" + texts + "</div>" +
+      "</div></div>";
   }
 
-  /* ---------------------------------------------------------- 结构化 */
+  /* ---------------------------------------------------------------- 结构化 */
 
   function viewStructured(key) {
-    const sets = IDX.structured || [];
-    if (!sets.length) return `<div class="empty">没有结构化数据</div>`;
-    const cur = sets.find((s) => s.key === key) || sets[0];
-    const tabs = sets.map((s) => `<button data-href="#/x/${enc(s.key)}" class="${s.key === cur.key ? "on" : ""}">${esc(s.title)}</button>`).join("")
-      + `<button data-href="#/c" style="margin-left:14px">角色名录 (${(IDX.characters || []).length}) →</button>`;
-    let body;
+    var list = IDX.structured || [];
+    if (!list.length) return docbar("结构化", "") + '<div class="frame"><div class="empty">没有结构化数据</div></div>';
+    var cur = list.filter(function (s) { return s.key === key; })[0] || list[0];
+
+    var tabs = list.map(function (s) {
+      return '<button data-tab="' + esc(s.key) + '"' + (s.key === cur.key ? ' class="on"' : "") + ">" + esc(s.title) + "</button>";
+    }).join("");
+
+    var body = "";
     if (cur.kind === "table") {
-      body = (cur.data || []).map((t) => `
-        ${t.caption ? `<h2 class="sec-title">${esc(t.caption)}</h2>` : ""}
-        <table class="dtable" style="border-collapse:collapse;width:100%;font-size:13.5px;border:1px solid var(--line)">
-          <thead><tr>${t.headers.map((h) => `<th style="text-align:left;font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2);padding:9px 12px;background:var(--bg-3);border-bottom:1px solid var(--line-2)">${esc(h)}</th>`).join("")}</tr></thead>
-          <tbody>${t.rows.map((row) => `<tr>${row.map((c) => `<td style="padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top">${mdInline(c)}</td>`).join("")}</tr>`).join("")}</tbody>
-        </table>`).join("");
+      (cur.data || []).forEach(function (tb) {
+        if (tb.caption) body += '<h2 class="sec-title" style="margin-top:36px">' + esc(tb.caption) + "</h2>";
+        var head = tb.headers || [];
+        body += '<table class="dtable">' +
+          (head.length ? "<thead><tr>" + head.map(function (h) { return "<th>" + esc(h) + "</th>"; }).join("") + "</tr></thead>" : "") +
+          "<tbody>" + (tb.rows || []).map(function (r) {
+            return "<tr>" + r.map(function (c) { return "<td>" + esc(c) + "</td>"; }).join("") + "</tr>";
+          }).join("") + "</tbody></table>";
+      });
     } else {
-      body = (cur.data || []).map((gp) => `
-        <h2 class="sec-title">${esc(gp.heading)}</h2>
-        <div class="kv">${gp.items.map((it) => `<div class="k">${esc(it.key)}</div><div>${mdInline(it.value) || "<span class='dim'>—</span>"}</div>`).join("")}</div>`).join("");
+      (cur.data || []).forEach(function (g) {
+        if (g.heading) body += '<h2 class="sec-title" style="margin-top:36px">' + esc(g.heading) + "</h2>";
+        body += '<div class="kvlist">' + (g.items || []).map(function (it) {
+          return '<div class="row"><span class="k">' + esc(it.key) + '</span><span class="v">' + esc(it.value) + "</span></div>";
+        }).join("") + "</div>";
+      });
     }
-    return `<div class="kicker">Structured Data</div><h1 class="page-title">结构化内容</h1>
-      <p class="lede">把散落在原文里的对照表、编号规则与映射关系抽取成可快速查阅的数据视图。</p>
-      <div class="tabs" style="margin-top:24px">${tabs}</div>
-      <div class="crumb mono" style="font-size:11px;color:var(--ink-3);margin-bottom:16px">来源：${cur.sourceId ? `<a class="wikilink" href="${noteUrl(cur.sourceId)}">${esc(cur.source)}</a>` : esc(cur.source)} — ${esc(cur.desc || "")}</div>
-      ${body}`;
+
+    var src = cur.sourceId && byId.get(cur.sourceId);
+    return docbar("结构化", "<span>" + list.length + " 组</span>") +
+      '<div class="frame">' +
+      pageHead("结构化档案", "结构化条目", "把散落在原文里的对照表、编号规则与映射关系抽成可快速查阅的视图。") +
+      '<div class="tabs">' + tabs + "</div>" +
+      (src ? '<div class="mono dim" style="font-size:10px;letter-spacing:.1em;margin-top:14px">来源 / <a href="' + noteUrl(src.id) + '" style="border-bottom:1px solid var(--line-2)">' + esc(src.title) + "</a></div>" : "") +
+      body + "</div>";
   }
 
-  function mdInline(s) {
-    if (!s) return "";
-    let t = esc(s);
-    t = t.replace(/\[\[([^\]\|]+)(?:\|([^\]]*))?\]\]/g, (m, a, b) => {
-      const n = NOTES.find((x) => x.base === a.split("/").pop() || x.id === a || x.title === a);
-      const label = b || a.split("/").pop();
-      return n ? `<a class="wikilink" href="${noteUrl(n.id)}">${esc(label)}</a>` : `<span class="wikilink dead">${esc(label)}</span>`;
-    });
-    t = t.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
-    t = t.replace(/`([^`]+)`/g, '<code style="font-family:var(--font-mono);font-size:.88em;color:var(--cyan)">$1</code>');
-    return t;
-  }
+  /* ---------------------------------------------------------------- 关系图 */
 
-  /* ---------------------------------------------------------- 搜索 */
-
-  let SEARCH_INDEX = null;
-  function buildIndex() {
-    if (SEARCH_INDEX) return SEARCH_INDEX;
-    SEARCH_INDEX = NOTES.map((n) => ({
-      n,
-      low: ((n.title || "") + " " + (n.base || "") + " " + (n.blurb || "") + " " + (n.text || "")).toLowerCase(),
-      titleLow: ((n.title || "") + " " + (n.base || "")).toLowerCase(),
-    }));
-    return SEARCH_INDEX;
-  }
-
-  function doSearch(q) {
-    const idx = buildIndex();
-    const lq = q.toLowerCase().trim();
-    if (!lq) return [];
-    const terms = lq.split(/\s+/).filter(Boolean);
-    const res = [];
-    for (const it of idx) {
-      let score = 0, ok = true;
-      for (const t of terms) {
-        const inTitle = it.titleLow.includes(t);
-        const cnt = it.low.split(t).length - 1;
-        if (!cnt) { ok = false; break; }
-        score += (inTitle ? 40 : 0) + Math.min(cnt, 8);
-      }
-      if (!ok) continue;
-      if (it.titleLow.includes(lq)) score += 60;
-      res.push([score, it.n]);
-    }
-    res.sort((a, b) => b[0] - a[0]);
-    return res.slice(0, 60).map((x) => x[1]);
-  }
-
-  function snippet(n, q) {
-    const src = n.text || "";
-    const lq = q.toLowerCase();
-    let pos = -1;
-    for (const t of lq.split(/\s+/).filter(Boolean)) {
-      pos = src.toLowerCase().indexOf(t);
-      if (pos >= 0) break;
-    }
-    if (pos < 0) return esc((n.blurb || "").slice(0, 200));
-    const from = Math.max(0, pos - 70);
-    let s = src.slice(from, from + 260);
-    s = esc(s);
-    for (const t of q.split(/\s+/).filter(Boolean)) {
-      try { s = s.replace(new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), (x) => `<em>${x}</em>`); } catch (e) {}
-    }
-    return (from > 0 ? "…" : "") + s + "…";
-  }
-
-  function viewSearch(q) {
-    const query = q || "";
-    const hits = query ? doSearch(query) : [];
-    return `<div class="kicker">Full-text</div><h1 class="page-title">全文检索</h1>
-      <p class="lede">对全部 ${NOTES.length} 篇笔记的正文做子串检索；空格分隔多个关键词（须全部命中）。</p>
-      <form class="searchbar-big" id="searchform" style="margin-top:22px">
-        <input id="q" type="search" placeholder="如：Zone 飞地 / Astral / 千禧年事件" value="${esc(query)}" autocomplete="off">
-      </form>
-      ${query ? (hits.length ? `<div class="mono dim" style="font-size:11px;margin-bottom:14px">${hits.length} 条结果</div>` +
-        hits.map((n) => `<a class="hit" href="${noteUrl(n.id)}" style="display:block">
-          <div class="t">${esc(n.title)}</div>
-          <div class="p">${esc(n.section || "")} › ${esc(n.path)}</div>
-          <div class="x">${snippet(n, query)}</div></a>`).join("")
-        : `<div class="empty">没有命中「${esc(query)}」</div>`) : ""}`;
-  }
-
-  function mountGalleryFilter() {
-    const f = $("#galfilter");
-    if (!f) return;
-    const cards = [...document.querySelectorAll(".gal-card[data-q]")];
-    const note = $("#galfilter-note");
-    const apply = () => {
-      const q = f.value.trim().toLowerCase();
-      let n = 0;
-      for (const c of cards) {
-        const ok = !q || c.getAttribute("data-q").includes(q);
-        c.style.display = ok ? "" : "none";
-        if (ok) n++;
-      }
-      if (note) note.textContent = q ? `${n} / ${cards.length} 张命中` : "";
-    };
-    f.addEventListener("input", apply);
-  }
-
-  function mountSearch() {
-    const f = $("#searchform");
-    if (!f) return;
-    f.addEventListener("submit", (e) => {
-      e.preventDefault();
-      location.hash = "#/q/" + enc($("#q").value.trim());
-    });
-  }
-
-  /* ---------------------------------------------------------- 关系图 */
-
-  let graphStop = null;
   function viewGraph() {
-    const linkCount = NOTES.reduce((a, n) => a + (n.links || []).filter((t) => byId.has(t)).length, 0);
-    return `<div class="kicker">Wikilink Network</div>
-      <h1 class="page-title" style="margin-bottom:6px">关系图</h1>
-      <p class="lede" style="margin-bottom:18px">${NOTES.length} 个节点 · ${linkCount} 条 wikilink 边 · 颜色表示所属分类。拖拽平移、滚轮缩放、悬停高亮、点击打开笔记。</p>
-      <div class="graphwrap">
-        <canvas id="graph"></canvas>
-        <div class="graph-legend" id="glegend"></div>
-        <div class="graph-hint">拖拽平移 · 滚轮缩放 · 点击节点打开 · 双击空白复位</div>
-      </div>`;
+    return docbar("关系图", "<span>" + NOTES.length + " 节点</span><span>" + edgeCount() + " 条边</span>") +
+      '<div class="frame">' +
+      pageHead("双链网络", "关系图", "每个节点是一篇笔记，边是正文里的 wikilink。颜色按分类，拖拽平移，滚轮缩放，悬停高亮，点击打开。") +
+      '<div class="graphwrap"><canvas id="graph"></canvas>' +
+      '<div class="graph-hint">拖拽平移 · 滚轮缩放 · 双击复位</div>' +
+      '<div class="graph-legend" id="legend"></div></div></div>';
   }
+
+  var PAL = ["#c73e2d", "#3f7b4a", "#e2b43b", "#286a9b", "#8f3b2e", "#2f5f3a", "#b08a26", "#1f5478",
+    "#a85b4a", "#5c8f66", "#cfa34a", "#4d7fa0", "#7d2a20", "#264a2d", "#8a6a18", "#163d59"];
 
   function mountGraph() {
-    if (graphStop) { graphStop(); graphStop = null; }
-    const cv = $("#graph");
+    var cv = document.getElementById("graph");
     if (!cv) return;
-    const ctx = cv.getContext("2d");
-    const dpr = window.devicePixelRatio || 1;
+    var wrap = cv.parentNode;
+    var ctx = cv.getContext("2d");
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var W = 0, H = 0;
 
-    const PAL = ["#e2a838", "#4fc7d4", "#8b7ff0", "#6fca8b", "#e2657f", "#d98a4f", "#7f9df0", "#c07fe0",
-      "#5fb8a8", "#e0b060", "#90a0e8", "#e07f9f", "#a8c46a", "#6fa8d8", "#d8a0c0", "#8fc0a0"];
-    const secs = (IDX.sections || []).map((s) => s.name);
-    const secColor = new Map(secs.map((s, i) => [s, PAL[i % PAL.length]]));
+    /* 度数最高的笔记当枢纽（通常是总览 MOC），钉在原点 */
+    var hubId = null, hubDeg = -1;
+    NOTES.forEach(function (n) {
+      var d = (n.links || []).length + (n.backlinks || []).length;
+      if (d > hubDeg) { hubDeg = d; hubId = n.id; }
+    });
 
-    const nodes = NOTES.map((n, i) => ({
-      id: n.id, title: n.title, sec: n.section,
-      x: Math.cos((i / NOTES.length) * Math.PI * 2) * 380 + (Math.random() - 0.5) * 60,
-      y: Math.sin((i / NOTES.length) * Math.PI * 2) * 380 + (Math.random() - 0.5) * 60,
-      vx: 0, vy: 0, deg: (n.links || []).length + (n.backlinks || []).length,
-      r: 2.6 + Math.min(6, Math.sqrt((n.words || 0) / 260)),
-    }));
-    const idxOf = new Map(nodes.map((n, i) => [n.id, i]));
-    const edges = [];
-    for (const n of NOTES) {
-      for (const t of (n.links || [])) {
-        if (idxOf.has(t) && t !== n.id) edges.push([idxOf.get(n.id), idxOf.get(t)]);
-      }
-    }
+    var nodes = [], look = new Map();
+    NOTES.forEach(function (n) {
+      var si = secIndex.has(n.section) ? secIndex.get(n.section) : 15;
+      var deg = (n.links || []).length + (n.backlinks || []).length;
+      var o = {
+        id: n.id, title: n.title, deg: deg, sec: si, color: PAL[si % PAL.length],
+        ang: (si / Math.max(1, SECTIONS.length)) * Math.PI * 2,
+        r: 300, x: 0, y: 0, vx: 0, vy: 0, fixed: n.id === hubId
+      };
+      nodes.push(o); look.set(n.id, o);
+    });
 
-    let W = 0, H = 0;
+    /* 放射初值：每个分类一根辐条，同类的笔记沿弧排开 */
+    var counters = Object.create(null);
+    nodes.forEach(function (n) {
+      if (n.fixed) return;
+      var c = counters[n.sec] = (counters[n.sec] || 0) + 1;
+      n.r = 300 + ((c - 1) % 4) * 74 + (c > 12 ? 60 : 0);
+      n.ang = n.ang + (((c - 1) % 5) - 2) * 0.05;
+      n.x = Math.cos(n.ang) * n.r;
+      n.y = Math.sin(n.ang) * n.r;
+    });
+
+    var edges = [];
+    NOTES.forEach(function (n) {
+      (n.links || []).forEach(function (t) {
+        if (look.has(t)) edges.push([look.get(n.id), look.get(t)]);
+      });
+    });
+
+    var view = { k: 1 }, hover = null, drag = null, dragNode = null, alpha = 1, pan = { x: 0, y: 0 };
+
     function resize() {
-      const r = cv.parentElement.getBoundingClientRect();
+      var r = wrap.getBoundingClientRect();
       W = r.width; H = r.height;
       cv.width = W * dpr; cv.height = H * dpr;
       cv.style.width = W + "px"; cv.style.height = H + "px";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      view.k = Math.min(W, H) / 1380;
+      draw();
     }
-    resize();
+    function toScreen(x, y) { return [x * view.k + W / 2 + pan.x, y * view.k + H / 2 + pan.y]; }
+    function toWorld(sx, sy) { return [(sx - W / 2 - pan.x) / view.k, (sy - H / 2 - pan.y) / view.k]; }
 
-    const view = { x: 0, y: 0, k: Math.min(W, H) / 1100 };
-    let hover = -1, drag = null, panning = null, alpha = 1;
-
-    /* 力导向 */
-    function step() {
-      const cx = 0, cy = 0;
-      for (const n of nodes) { n.fx = 0; n.fy = 0; }
-      // 斥力（Barnes-Hut 简化为采样）
-      const N = nodes.length;
-      for (let i = 0; i < N; i++) {
-        const a = nodes[i];
-        for (let j = i + 1; j < N; j++) {
-          const b = nodes[j];
-          let dx = b.x - a.x, dy = b.y - a.y;
-          let d2 = dx * dx + dy * dy;
-          if (d2 < 1) d2 = 1;
-          if (d2 > 90000) continue;
-          const f = 2600 / d2;
-          const d = Math.sqrt(d2);
-          const ux = dx / d, uy = dy / d;
-          a.fx -= ux * f; a.fy -= uy * f;
-          b.fx += ux * f; b.fy += uy * f;
+    function tick() {
+      edges.forEach(function (e) {
+        var a = e[0], b = e[1];
+        var dx = b.x - a.x, dy = b.y - a.y;
+        var d = Math.sqrt(dx * dx + dy * dy) || 1;
+        var f = (d - 64) * 0.0024;
+        var fx = (dx / d) * f, fy = (dy / d) * f;
+        if (!a.fixed) { a.vx += fx; a.vy += fy; }
+        if (!b.fixed) { b.vx -= fx; b.vy -= fy; }
+      });
+      for (var i = 0; i < nodes.length; i++) {
+        var a = nodes[i];
+        if (a.fixed) continue;
+        for (var j = i + 1; j < nodes.length; j++) {
+          var b = nodes[j];
+          var dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
+          if (d2 > 40000 || d2 < 1) continue;
+          var d = Math.sqrt(d2), f = 900 / d2;
+          var fx = (dx / d) * f, fy = (dy / d) * f;
+          a.vx -= fx; a.vy -= fy;
+          if (!b.fixed) { b.vx += fx; b.vy += fy; }
         }
       }
-      // 弹簧
-      for (const [i, j] of edges) {
-        const a = nodes[i], b = nodes[j];
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const d = Math.sqrt(dx * dx + dy * dy) || 1;
-        const f = (d - 96) * 0.014;
-        const ux = dx / d, uy = dy / d;
-        a.fx += ux * f; a.fy += uy * f;
-        b.fx -= ux * f; b.fy -= uy * f;
-      }
-      // 向心 + 分类聚类
-      for (const n of nodes) {
-        n.fx += (cx - n.x) * 0.008;
-        n.fy += (cy - n.y) * 0.008;
-        const a = secs.indexOf(n.sec);
-        if (a >= 0) {
-          const ang = (a / secs.length) * Math.PI * 2;
-          const gx = Math.cos(ang) * 300, gy = Math.sin(ang) * 300;
-          n.fx += (gx - n.x) * 0.004;
-          n.fy += (gy - n.y) * 0.004;
-        }
-      }
-      for (const n of nodes) {
-        n.vx = (n.vx + n.fx * alpha) * 0.82;
-        n.vy = (n.vy + n.fy * alpha) * 0.82;
-        n.x += n.vx; n.y += n.vy;
-      }
-      alpha *= 0.994;
-      if (alpha < 0.02) alpha = 0.02;
+      nodes.forEach(function (n) {
+        if (n.fixed) { n.x = 0; n.y = 0; n.vx = n.vy = 0; return; }
+        var ax = Math.cos(n.ang) * n.r, ay = Math.sin(n.ang) * n.r;
+        n.vx += (ax - n.x) * 0.03;
+        n.vy += (ay - n.y) * 0.03;
+        n.x += n.vx * alpha; n.y += n.vy * alpha;
+        n.vx *= 0.55; n.vy *= 0.55;
+      });
+      alpha = Math.max(0.03, alpha * 0.993);
     }
-
-    function toScreen(x, y) { return [(x + view.x) * view.k + W / 2, (y + view.y) * view.k + H / 2]; }
-    function toWorld(sx, sy) { return [(sx - W / 2) / view.k - view.x, (sy - H / 2) / view.k - view.y]; }
 
     function draw() {
       ctx.clearRect(0, 0, W, H);
-      ctx.fillStyle = "#080910";
-      ctx.fillRect(0, 0, W, H);
-      ctx.save();
-      // 边
-      ctx.lineWidth = Math.max(0.35, view.k * 0.8);
-      for (const [i, j] of edges) {
-        const a = nodes[i], b = nodes[j];
-        const hl = hover === i || hover === j;
-        ctx.strokeStyle = hl ? "rgba(226,168,56,0.75)" : "rgba(150,160,200,0.16)";
-        const [x1, y1] = toScreen(a.x, a.y), [x2, y2] = toScreen(b.x, b.y);
-        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-      }
-      // 点
-      for (let i = 0; i < nodes.length; i++) {
-        const n = nodes[i];
-        const [x, y] = toScreen(n.x, n.y);
-        if (x < -40 || y < -40 || x > W + 40 || y > H + 40) continue;
-        const c = secColor.get(n.sec) || "#8a8f9c";
-        ctx.beginPath();
-        ctx.arc(x, y, Math.max(1.6, n.r * view.k * 1.4), 0, Math.PI * 2);
-        ctx.fillStyle = hover === i ? "#fff" : c;
-        ctx.globalAlpha = hover === i ? 1 : 0.88;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        if (hover === i) {
-          ctx.save();
-          ctx.font = "600 12px 'Source Han Sans CN', sans-serif";
-          const label = n.title.length > 22 ? n.title.slice(0, 22) + "…" : n.title;
-          const tw = ctx.measureText(label).width;
-          ctx.fillStyle = "rgba(10,11,16,0.92)";
-          ctx.fillRect(x + 9, y - 10, tw + 14, 21);
-          ctx.strokeStyle = "rgba(226,168,56,0.6)";
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x + 9, y - 10, tw + 14, 21);
-          ctx.fillStyle = "#e8e6e1";
-          ctx.fillText(label, x + 16, y + 5);
-          ctx.restore();
+      edges.forEach(function (e) {
+        var p = toScreen(e[0].x, e[0].y), q = toScreen(e[1].x, e[1].y);
+        var hot = hover && (e[0] === hover || e[1] === hover);
+        var hub = e[0].fixed || e[1].fixed;
+        ctx.strokeStyle = hot ? "rgba(32,37,34,.62)" : hub ? "rgba(32,37,34,.07)" : "rgba(32,37,34,.15)";
+        ctx.lineWidth = hot ? 1.4 : 1;
+        ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
+      });
+      nodes.forEach(function (n) {
+        var p = toScreen(n.x, n.y);
+        var r = n.fixed ? 6 : Math.min(8.5, 2.2 + Math.sqrt(n.deg) * 0.9);
+        if (hover && n !== hover) ctx.globalAlpha = 0.32;
+        ctx.fillStyle = n.fixed ? "#202522" : n.color;
+        ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, Math.PI * 2); ctx.fill();
+        if (hover === n || n.fixed || n.deg > 30) {
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = n.fixed ? "#c73e2d" : "#202522";
+          ctx.font = (n.fixed ? "600 12px " : "11px ") + "'JetBrains Mono', monospace";
+          ctx.fillText(n.title, p[0] + r + 5, p[1] + 4);
         }
-      }
-      ctx.restore();
+        ctx.globalAlpha = 1;
+      });
     }
 
-    let running = true;
-    function loop() {
-      if (!running) return;
-      step(); draw();
-      requestAnimationFrame(loop);
-    }
+    function loop() { tick(); draw(); requestAnimationFrame(loop); }
 
-    // 交互
-    function pick(sx, sy) {
-      let best = -1, bd = 12 * 12;
-      for (let i = 0; i < nodes.length; i++) {
-        const [x, y] = toScreen(nodes[i].x, nodes[i].y);
-        const d = (x - sx) * (x - sx) + (y - sy) * (y - sy);
-        if (d < bd) { bd = d; best = i; }
-      }
+    function hitTest(sx, sy) {
+      var best = null, bd = 1e9;
+      nodes.forEach(function (n) {
+        var p = toScreen(n.x, n.y);
+        var d = (p[0] - sx) * (p[0] - sx) + (p[1] - sy) * (p[1] - sy);
+        if (d < 110 && d < bd) { bd = d; best = n; }
+      });
       return best;
     }
-    const rectPos = (e) => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 
-    cv.addEventListener("mousemove", (e) => {
-      const [sx, sy] = rectPos(e);
-      if (panning) {
-        view.x += (sx - panning[0]) / view.k;
-        view.y += (sy - panning[1]) / view.k;
-        panning = [sx, sy];
-        return;
-      }
+    cv.addEventListener("mousedown", function (e) {
+      var r = cv.getBoundingClientRect();
+      var n = hitTest(e.clientX - r.left, e.clientY - r.top);
+      if (n && !n.fixed) { dragNode = n; } else { drag = { x: e.clientX, y: e.clientY }; }
+    });
+    window.addEventListener("mouseup", function () { drag = null; dragNode = null; });
+    cv.addEventListener("mousemove", function (e) {
+      var r = cv.getBoundingClientRect();
+      var sx = e.clientX - r.left, sy = e.clientY - r.top;
       if (drag) {
-        const [wx, wy] = toWorld(sx, sy);
-        const n = nodes[drag.i];
-        n.x = wx; n.y = wy; n.vx = n.vy = 0;
-        return;
+        cv.style.cursor = "grabbing";
+        pan.x += e.clientX - drag.x; pan.y += e.clientY - drag.y;
+        drag.x = e.clientX; drag.y = e.clientY;
+        draw(); return;
       }
-      const h = pick(sx, sy);
-      if (h !== hover) { hover = h; cv.style.cursor = h >= 0 ? "pointer" : "grab"; }
-    });
-    cv.addEventListener("mousedown", (e) => {
-      const [sx, sy] = rectPos(e);
-      const h = pick(sx, sy);
-      if (h >= 0) { drag = { i: h, moved: 0 }; cv.classList.add("drag"); }
-      else { panning = [sx, sy]; cv.classList.add("drag"); }
-    });
-    window.addEventListener("mouseup", (e) => {
-      if (drag) {
-        const [sx, sy] = rectPos(e);
-        if (Math.abs(sx - toScreen(nodes[drag.i].x, nodes[drag.i].y)[0]) < 6) location.hash = noteUrl(nodes[drag.i].id);
+      if (dragNode) {
+        var w = toWorld(sx, sy);
+        dragNode.x = w[0]; dragNode.y = w[1];
+        dragNode.vx = dragNode.vy = 0;
+        alpha = Math.max(alpha, 0.10); draw(); return;
       }
-      drag = null; panning = null; cv.classList.remove("drag");
+      var n = hitTest(sx, sy);
+      if (n !== hover) { hover = n; cv.style.cursor = n ? "pointer" : "grab"; draw(); }
     });
-    cv.addEventListener("click", (e) => {
-      const [sx, sy] = rectPos(e);
-      const h = pick(sx, sy);
-      if (h >= 0) location.hash = noteUrl(nodes[h].id);
+    cv.addEventListener("click", function (e) {
+      var r = cv.getBoundingClientRect();
+      var n = hitTest(e.clientX - r.left, e.clientY - r.top);
+      if (n) location.hash = noteUrl(n.id).slice(1);
     });
-    cv.addEventListener("dblclick", () => { view.x = 0; view.y = 0; view.k = Math.min(W, H) / 1100; alpha = 0.9; });
-    cv.addEventListener("wheel", (e) => {
+    cv.addEventListener("dblclick", function () {
+      pan.x = pan.y = 0; alpha = 0.5; draw();
+    });
+    cv.addEventListener("wheel", function (e) {
       e.preventDefault();
-      const [sx, sy] = rectPos(e);
-      const [bx, by] = toWorld(sx, sy);
-      view.k *= e.deltaY < 0 ? 1.12 : 0.89;
-      view.k = Math.max(0.12, Math.min(6, view.k));
-      const [ax, ay] = toWorld(sx, sy);
-      view.x += ax - bx; view.y += ay - by;
+      view.k = Math.max(0.2, Math.min(4, view.k * (e.deltaY < 0 ? 1.1 : 0.9)));
+      draw();
     }, { passive: false });
 
-    const onResize = () => resize();
-    window.addEventListener("resize", onResize);
+    var lg = document.getElementById("legend");
+    if (lg) {
+      lg.innerHTML = SECTIONS.map(function (s, i) {
+        return '<div><i style="background:' + PAL[i % PAL.length] + '"></i>' + esc(s.name) + "</div>";
+      }).join("");
+    }
 
-    const leg = $("#glegend");
-    if (leg) leg.innerHTML = secs.map((s) => `<div><i style="background:${secColor.get(s)}"></i>${esc(s)}</div>`).join("");
-
-    loop();
-    graphStop = () => { running = false; window.removeEventListener("resize", onResize); };
+    window.addEventListener("resize", resize);
+    resize(); loop();
   }
 
-  /* ---------------------------------------------------------- 全局交互 */
+  /* ---------------------------------------------------------------- 检索 */
+
+  var searchIndex = null;
+
+  function buildIndex() {
+    if (searchIndex) return searchIndex;
+    searchIndex = NOTES.map(function (n) {
+      return {
+        n: n,
+        hay: (n.title + " " + (n.base || "") + " " + (n.blurb || "") + " " + (n.text || "")).toLowerCase(),
+        titleLow: (n.title || "").toLowerCase()
+      };
+    });
+    return searchIndex;
+  }
+
+  function snippet(text, ws) {
+    var low = text.toLowerCase(), best = -1;
+    ws.forEach(function (w) {
+      var i = low.indexOf(w);
+      if (i >= 0 && (best < 0 || i < best)) best = i;
+    });
+    var start = best > 70 ? best - 70 : 0;
+    var s = text.slice(start, start + 300);
+    if (start > 0) s = "… " + s;
+    var out = esc(s);
+    ws.forEach(function (w) {
+      if (!w) return;
+      out = out.replace(new RegExp("(" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "gi"), "<em>$1</em>");
+    });
+    return out;
+  }
+
+  function doSearch(q) {
+    var ws = q.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!ws.length) return [];
+    var out = [];
+    buildIndex().forEach(function (it) {
+      var score = 0, ok = true;
+      ws.forEach(function (w) {
+        if (it.hay.indexOf(w) < 0) { ok = false; return; }
+        score += it.hay.split(w).length - 1;
+        if (it.titleLow.indexOf(w) >= 0) score += 40;
+      });
+      if (!ok) return;
+      if (it.titleLow.indexOf(q.toLowerCase()) >= 0) score += 60;
+      out.push({ n: it.n, score: score });
+    });
+    out.sort(function (a, b) { return b.score - a.score; });
+    return out.slice(0, 80);
+  }
+
+  function viewSearch(q) {
+    var hits = q ? doSearch(q) : [];
+    var list;
+    if (!q) {
+      list = '<div class="empty">输入关键词开始检索。空格分隔多个词时要求全部命中。</div>';
+    } else if (!hits.length) {
+      list = '<div class="empty">没有命中。试试点分隔多个关键词，例如「Astral 网络」</div>';
+    } else {
+      var ws = q.toLowerCase().split(/\s+/).filter(Boolean);
+      list = hits.map(function (h, i) {
+        return '<a class="hit" href="' + noteUrl(h.n.id) + '">' +
+          '<span class="no">' + pad2(i + 1) + "</span>" +
+          '<div><div class="t">' + esc(h.n.title) + "</div>" +
+          '<div class="p">' + esc(h.n.section || "") + " / " + esc(h.n.path) + "</div>" +
+          '<div class="x">' + snippet(h.n.text || h.n.blurb || "", ws) + "</div></div></a>";
+      }).join("");
+    }
+
+    return docbar("检索", "<span>" + (q ? hits.length + " 条命中" : "") + "</span>") +
+      '<div class="frame">' +
+      pageHead("全文检索", "检索档案", "对全部 " + NOTES.length + " 篇正文做子串检索，空格分隔多个关键词则须全部命中。") +
+      '<div class="searchbar-big"><input id="qinput" type="search" value="' + esc(q || "") + '" placeholder="输入关键词" autocomplete="off"></div>' +
+      '<div class="mono dim" style="font-size:10px;letter-spacing:.12em;margin:6px 0 18px">' +
+      (q ? hits.length + " 条命中 / " + NOTES.length + " 篇" : "就绪") + "</div>" +
+      "<div>" + list + "</div></div>";
+  }
+
+  /* ---------------------------------------------------------------- 渲染 */
+
+  function parseHash() {
+    var h = location.hash.replace(/^#/, "").replace(/^\/+/, "");
+    var parts = h.split("/").filter(function (x) { return x !== ""; });
+    if (!parts.length) parts = [""];
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+      try { out.push(decodeURIComponent(parts[i])); } catch (e) { out.push(parts[i]); }
+    }
+    if (out[0] === "note") out[0] = "n";
+    if (out[0] === "gallery") out[0] = "g";
+    return out;
+  }
+
+  function setActiveNav(root) {
+    document.querySelectorAll(".mainnav a").forEach(function (a) {
+      a.classList.toggle("on", a.getAttribute("data-root") === root);
+    });
+  }
+
+  function render() {
+    var p = parseHash();
+    var main = $("#main");
+    var html, root = p[0] || "";
+
+    if (root === "" || root === "/") html = viewHome();
+    else if (root === "s") html = p.length > 1 ? viewSection(p[1]) : viewSections();
+    else if (root === "n") html = viewNote(p.slice(1).join("/"));
+    else if (root === "x") html = viewStructured(p[1]);
+    else if (root === "c") html = viewCharacters();
+    else if (root === "g") html = p.length > 1 ? viewGalleryItem(p.slice(1).join("/")) : viewGallery();
+    else if (root === "map") html = viewGraph();
+    else if (root === "q") html = viewSearch(p.slice(1).join("/"));
+    else html = notFound(p.join("/"));
+
+    main.innerHTML = html;
+    setActiveNav(root);
+    window.scrollTo(0, 0);
+
+    if (root === "g" && p.length === 1) mountGalleryFilter();
+    if (root === "map") mountGraph();
+    if (root === "q") mountSearchInput();
+    if (root === "x") mountTabs();
+
+    var fm = $("#footmeta");
+    if (fm) fm.textContent = "构建 " + ((IDX.meta && IDX.meta.builtAt) || "") + " / 纪年 " + hexDay();
+  }
+
+  /* ---------------------------------------------------------------- 交互 */
+
+  function mountGalleryFilter() {
+    var f = $("#galfilter");
+    if (!f) return;
+    var cards = Array.prototype.slice.call(document.querySelectorAll(".gal-card[data-q]"));
+    var note = $("#galfilter-note");
+    f.addEventListener("input", function () {
+      var q = f.value.trim().toLowerCase(), n = 0;
+      cards.forEach(function (c) {
+        var ok = !q || c.getAttribute("data-q").indexOf(q) >= 0;
+        c.style.display = ok ? "" : "none";
+        if (ok) n++;
+      });
+      if (note) note.textContent = q ? n + " / " + cards.length + " 张命中" : "";
+    });
+  }
+
+  function mountSearchInput() {
+    var inp = $("#qinput");
+    if (!inp) return;
+    var t = null;
+    inp.focus();
+    inp.setSelectionRange(inp.value.length, inp.value.length);
+    inp.addEventListener("input", function () {
+      clearTimeout(t);
+      t = setTimeout(function () {
+        var v = inp.value.trim();
+        history.replaceState(null, "", v ? "#/q/" + enc(v) : "#/q");
+        render();
+      }, 260);
+    });
+  }
+
+  function mountTabs() {
+    document.querySelectorAll(".tabs button").forEach(function (b) {
+      b.addEventListener("click", function () {
+        location.hash = "#/x/" + enc(b.getAttribute("data-tab"));
+      });
+    });
+  }
 
   function openLightbox(src) {
-    let lb = $("#lightbox");
+    var lb = document.getElementById("lightbox");
     if (!lb) {
       lb = document.createElement("div");
       lb.id = "lightbox";
       lb.className = "lightbox";
-      lb.innerHTML = '<img alt=""><div class="lb-hint mono">点击任意处或按 Esc 关闭</div>';
+      lb.innerHTML = '<img alt=""><div class="lb-hint">点击任意处或按 Esc 关闭</div>';
       document.body.appendChild(lb);
-      lb.addEventListener("click", () => lb.classList.remove("on"));
+      lb.addEventListener("click", function () { lb.classList.remove("on"); });
     }
-    $("img", lb).src = src;
+    lb.querySelector("img").src = src;
     lb.classList.add("on");
   }
 
-  document.addEventListener("click", (e) => {
-    const z = e.target.closest("img.zoomable");
+  document.addEventListener("click", function (e) {
+    var z = e.target.closest ? e.target.closest("img.zoomable") : null;
     if (z) { e.preventDefault(); openLightbox(z.getAttribute("src")); return; }
-    const el = e.target.closest("[data-href]");
-    if (el) { location.hash = el.getAttribute("data-href"); return; }
-    const toc = e.target.closest("[data-toc]");
-    if (toc) {
-      e.preventDefault();
-      const id = toc.getAttribute("data-toc");
-      const target = document.getElementById(id);
-      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  });
 
-  window.addEventListener("hashchange", render);
-
-  const gs = $("#globalsearch");
-  if (gs) {
-    gs.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && gs.value.trim()) location.hash = "#/q/" + enc(gs.value.trim());
-    });
-  }
-  document.addEventListener("keydown", (e) => {
-    if (/input|textarea|select/i.test(document.activeElement.tagName)) return;
-    if (e.key === "/") {
+    var t = e.target.closest ? e.target.closest("[data-toc]") : null;
+    if (t) {
       e.preventDefault();
-      const q = $("#globalsearch") || $("#q");
-      if (q) q.focus();
+      var el = document.getElementById(t.getAttribute("data-toc"));
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
-    if (e.key === "Escape") { const lb = $("#lightbox"); if (lb) lb.classList.remove("on"); return; }
-    /* 笔记页： [ 上一篇 / ] 下一篇 */
-    if (e.key === "[" || e.key === "]" || e.key === "j" || e.key === "k") {
-      const r = parseHash();
-      if (r.parts[0] !== "n" && r.parts[0] !== "note") return;
-      const id = r.parts.slice(1).join("/");
-      const i = ORDER_IDX.get(id);
-      if (i === undefined) return;
-      const step = e.key === "]" || e.key === "j" ? 1 : -1;
-      const t = ORDER[i + step];
-      if (t) { e.preventDefault(); location.hash = noteUrl(t); }
+
+    var btn = e.target.closest ? e.target.closest("#colsbtn") : null;
+    if (btn) {
+      var prose = document.querySelector(".prose");
+      if (!prose) return;
+      var nowTwo = prose.classList.toggle("two");
+      btn.classList.toggle("on", nowTwo);
+      btn.textContent = nowTwo ? "双栏" : "单栏";
+      localStorage.setItem("sub-cols", nowTwo ? "two" : "one");
+      return;
+    }
+
+    var el2 = e.target.closest ? e.target.closest("[data-href]") : null;
+    if (el2 && !(e.target.closest && e.target.closest("a"))) {
+      location.hash = el2.getAttribute("data-href");
     }
   });
 
-  if (!location.hash) location.hash = "#/";
+  document.addEventListener("keydown", function (e) {
+    var tag = (e.target.tagName || "").toLowerCase();
+    var typing = tag === "input" || tag === "textarea" || e.target.isContentEditable;
+
+    if (e.key === "/" && !typing) {
+      e.preventDefault();
+      var g = $("#globalsearch");
+      if (g) g.focus();
+      return;
+    }
+    if (e.key === "Escape") {
+      var lb = document.getElementById("lightbox");
+      if (lb) lb.classList.remove("on");
+      if (typing) e.target.blur();
+      return;
+    }
+    if (typing) return;
+
+    var p = parseHash();
+    if (p[0] !== "n") return;
+    var id = p.slice(1).join("/");
+    var i = ORDER_IDX.has(id) ? ORDER_IDX.get(id) : -1;
+    if (i < 0) return;
+    var back = (e.key === "[" || e.key === "k");
+    var fwd = (e.key === "]" || e.key === "j");
+    if (back && i > 0) location.hash = noteUrl(ORDER[i - 1]).slice(1);
+    if (fwd && i < ORDER.length - 1) location.hash = noteUrl(ORDER[i + 1]).slice(1);
+  });
+
+  $("#topnav").innerHTML = NAV.map(function (n) {
+    var root = n[0].replace(/^#\//, "").split("/")[0];
+    return '<a href="' + n[0] + '" data-root="' + root + '">' + n[1] + "</a>";
+  }).join("");
+
+  var gs = $("#globalsearch");
+  if (gs) {
+    gs.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        var v = gs.value.trim();
+        if (v) location.hash = "#/q/" + enc(v);
+        gs.blur();
+      }
+    });
+  }
+
+  window.addEventListener("hashchange", render);
   render();
 })();

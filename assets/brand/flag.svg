@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="800" viewBox="0 0 1200 800"
+     role="img" aria-labelledby="title desc">
+  <title id="title">Atlantean Cross — Libertarian Communist Flag</title>
+  <desc id="desc">
+    A 3:2 flag based on the provided reference. The cream field, central nucleus,
+    three interrupted concentric rings, ring widths and four-way cross-axis are
+    preserved. North/fire is red, south/earth green, west/wind yellow and east/water
+    blue. A hammer and sickle marks communist solidarity; a circled A marks
+    anti-authoritarian self-management. The green middle ring signifies ecology.
+  </desc>
+
+  <!-- Palette / orientation -->
+  <!-- North / Fire  : vermilion -->
+  <!-- South / Earth : green -->
+  <!-- West / Wind   : yellow -->
+  <!-- East / Water  : blue -->
+  <!-- Background    : warm ivory -->
+  <!-- Cross/rings   : charcoal -->
+
+  <rect width="1200" height="800" fill="#F0EBDD"/>
+
+  <!-- Cardinal tabs: north up; directions and colours follow the brief -->
+  <rect x="550" y="0"   width="100" height="166" fill="#C73E2D"/>
+  <rect x="550" y="634" width="100" height="166" fill="#3F7B4A"/>
+  <rect x="0"    y="350" width="176" height="100" fill="#E2B43B"/>
+  <rect x="1024" y="350" width="176" height="100" fill="#286A9B"/>
+
+  <!--
+    ATLANTEAN CROSS CONSTRUCTION — retained from the reference geometry:
+    center (600,400); outer ring r=219 / 34 thick; middle ring r=160 / 24 thick;
+    inner ring r=100 / 28 thick; axes 52 thick; nucleus r=25 with inner dot r=11.
+    The ivory gap masks preserve the four cardinal breaks in the outer ring.
+  -->
+  <circle cx="600" cy="400" r="219" fill="none" stroke="#202522" stroke-width="34"/>
+  <rect x="574" y="164" width="52" height="38" fill="#F0EBDD"/>
+  <rect x="574" y="598" width="52" height="38" fill="#F0EBDD"/>
+  <rect x="364" y="374" width="38" height="52" fill="#F0EBDD"/>
+  <rect x="798" y="374" width="38" height="52" fill="#F0EBDD"/>
+
+  <circle cx="600" cy="400" r="160" fill="none" stroke="#3F7B4A" stroke-width="24"/>
+  <circle cx="600" cy="400" r="100" fill="none" stroke="#202522" stroke-width="28"/>
+
+  <rect x="574" y="202" width="52" height="396" fill="#202522"/>
+  <rect x="402" y="374" width="396" height="52" fill="#202522"/>
+
+  <!-- Center nucleus unchanged -->
+  <circle cx="600" cy="400" r="25" fill="#F0EBDD"/>
+  <circle cx="600" cy="400" r="11" fill="#202522"/>
+
+  <!-- North / red: bold hammer-and-sickle, drawn as editable vector paths.
+       No star or wreath; the icon remains separate from the Atlantean Cross. -->
+  <g id="hammer-and-sickle" stroke="#202522" stroke-width="2.4"
+     stroke-linecap="round" stroke-linejoin="round">
+    <!-- Sickle blade -->
+    <path d="M 573 91
+             C 592 102, 613 91, 622 73
+             C 630 57, 624 42, 612 34
+             C 618 49, 616 63, 608 75
+             C 600 86, 586 89, 574 82 Z"
+          fill="#F0EBDD"/>
+    <!-- Sickle grip -->
+    <path d="M 575 86 L 565 99 L 571 104 L 582 91 Z" fill="#F0EBDD"/>
+    <!-- Hammer handle, deliberately dark so it does not disappear into the sickle -->
+    <path d="M 589 39 L 597 33 L 615 56 L 607 63 Z"
+          fill="#202522" stroke="#F0EBDD" stroke-width="1.8"/>
+    <!-- Hammer head -->
+    <path d="M 570 27 H 608 V 41 H 570 Z"
+          fill="#202522" stroke="#F0EBDD" stroke-width="1.8"/>
+  </g>
+
+  <!-- South / green: circled A as a restrained anarchist / self-management cue.
+       Separate from the central nucleus and rings. -->
+  <g id="self-management-mark" fill="none" stroke="#F0EBDD"
+     stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="600" cy="716" r="31"/>
+    <path d="M 582 731 L 600 692 L 618 731"/>
+    <path d="M 589 716 H 611"/>
+  </g>
+</svg>

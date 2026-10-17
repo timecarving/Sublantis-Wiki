@@ -3,29 +3,33 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sublantis 世界观 Wiki</title>
+<title>Sublantis 世界观档案库</title>
 <meta name="description" content="Sublantis 世界观 —— OC 设定集，收录全部原文笔记、结构化条目与手绘关系图鉴。">
+<link rel="icon" href="assets/brand/flag.svg">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 <div id="app">
   <header class="topbar">
-    <div class="brand" onclick="location.hash='#/'">
-      <span class="glyph">SUB</span>
-      <span class="name">Sublantis</span>
-      <span class="sub">WORLD WIKI</span>
-    </div>
+    <a class="brand" href="#/">
+      <img class="flag" src="assets/brand/flag.svg" alt="Sublantis 国旗" width="34" height="23">
+      <span class="wm"><b>Sublantis</b><i>世界观档案库</i></span>
+    </a>
     <nav class="mainnav" id="topnav"></nav>
-    <div class="spacer"></div>
     <div class="searchbox">
-      <input id="globalsearch" type="search" placeholder="全文检索…  ( / )" autocomplete="off">
+      <input id="globalsearch" type="search" placeholder="检索    /" autocomplete="off" aria-label="全文检索">
     </div>
   </header>
 
-  <main id="main"><div class="empty">加载中…</div></main>
+  <main id="main"><div class="empty">正在读取档案…</div></main>
 
-  <footer>
-    Sublantis 世界观 Wiki · 源 Obsidian「Sublantis世界观大体概述」 · 原文快照见 笔记/ 目录
+  <footer class="docfoot">
+    <div class="in">
+      <span class="docid">SUB·ARC / 档案库</span>
+      <span>源 Obsidian「Sublantis世界观大体概述」</span>
+      <span>原文快照见 笔记/</span>
+      <span id="footmeta" class="r"></span>
+    </div>
   </footer>
 </div>
 
